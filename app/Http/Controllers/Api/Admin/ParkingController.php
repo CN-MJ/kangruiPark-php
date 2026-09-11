@@ -5,12 +5,18 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\ParkingRecord;
+use App\Services\ParkingService;
+use App\Services\ParkingServiceException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ParkingController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(
+        private readonly ParkingService $parkingService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -39,24 +45,18 @@ class ParkingController extends Controller
 
     public function exit(Request $request, int $id): JsonResponse
     {
-        $record = ParkingRecord::find($id);
-
-        if (! $record) {
-            return $this->error('停车记录不存在', 404);
-        }
-
-        if ($record->status === ParkingRecord::STATUS_LEFT) {
-            return $this->error('该车辆已离场', 400);
-        }
-
         $validated = $request->validate([
             'exit_time' => 'nullable|date',
         ]);
 
-        $record->markExited(
-            isset($validated['exit_time']) ? new \DateTime($validated['exit_time']) : null
-        );
+        try {
+            $record = $this->parkingService->exitById($id, [
+                'exit_time' => $validated['exit_time'] ?? null,
+            ]);
+        } catch (ParkingServiceException $e) {
+            return $this->error($e->getMessage(), $e->statusCode);
+        }
 
-        return $this->success($record->fresh(), '出场成功');
+        return $this->success($record, '出场成功');
     }
 }

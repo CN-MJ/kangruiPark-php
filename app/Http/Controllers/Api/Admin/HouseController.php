@@ -14,7 +14,10 @@ class HouseController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = BuildingHouse::query()->orderByDesc('sort_order')->orderByDesc('id');
+        $query = BuildingHouse::query()
+            ->withCount('intents')
+            ->orderByDesc('sort_order')
+            ->orderByDesc('id');
         if ($request->filled('status')) {
             $query->where('status', (int) $request->input('status'));
         }
@@ -32,7 +35,9 @@ class HouseController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $house = BuildingHouse::find($id);
+        $house = BuildingHouse::query()
+            ->withCount('intents')
+            ->find($id);
         if (! $house) {
             return $this->error('房源不存在', 404);
         }

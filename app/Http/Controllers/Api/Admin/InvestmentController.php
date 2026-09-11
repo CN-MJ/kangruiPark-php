@@ -24,6 +24,9 @@ class InvestmentController extends Controller
         if ($request->filled('source')) {
             $query->where('source', $request->input('source'));
         }
+        if ($request->filled('house_id')) {
+            $query->where('house_id', (int) $request->input('house_id'));
+        }
 
         return $this->success($query->paginate(20));
     }

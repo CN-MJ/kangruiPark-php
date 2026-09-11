@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\Activity;
+use App\Models\ActivityRegistration;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,12 +31,37 @@ class ActivityController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $activity = Activity::find($id);
+        $activity = Activity::query()->withCount('registrations')->find($id);
         if (! $activity) {
             return $this->error('活动不存在', 404);
         }
 
         return $this->success($activity);
+    }
+
+    public function registrations(int $id): JsonResponse
+    {
+        $activity = Activity::find($id);
+        if (! $activity) {
+            return $this->error('活动不存在', 404);
+        }
+
+        $list = ActivityRegistration::query()
+            ->where('activity_id', $activity->id)
+            ->orderByDesc('created_at')
+            ->get();
+
+        return $this->success([
+            'activity' => [
+                'id' => $activity->id,
+                'title' => $activity->title,
+                'registered_count' => $activity->registered_count,
+                'max_attendees' => $activity->max_attendees,
+                'start_time' => $activity->start_time,
+                'location' => $activity->location,
+            ],
+            'list' => $list,
+        ]);
     }
 
     public function update(Request $request, int $id): JsonResponse

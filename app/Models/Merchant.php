@@ -15,9 +15,14 @@ class Merchant extends Model
         'name',
         'contact_name',
         'contact_phone',
+        'password',
         'location',
         'status',
         'sort_order',
+    ];
+
+    protected $hidden = [
+        'password',
     ];
 
     protected function casts(): array
@@ -25,6 +30,7 @@ class Merchant extends Model
         return [
             'status' => 'integer',
             'sort_order' => 'integer',
+            'password' => 'hashed',
         ];
     }
 

@@ -12,6 +12,10 @@ class ParkingRecord extends Model
     /** 状态：已离场 */
     public const STATUS_LEFT = 1;
 
+    public const SOURCE_MANUAL = 0;
+
+    public const SOURCE_HARDWARE = 1;
+
     protected $fillable = [
         'plate_number',
         'plate_key',
@@ -19,6 +23,10 @@ class ParkingRecord extends Model
         'entry_time',
         'exit_time',
         'status',
+        'source_type',
+        'event_id',
+        'entry_device_id',
+        'exit_device_id',
     ];
 
     protected function casts(): array
@@ -27,7 +35,26 @@ class ParkingRecord extends Model
             'entry_time' => 'datetime',
             'exit_time' => 'datetime',
             'status' => 'integer',
+            'source_type' => 'integer',
+            'event_id' => 'integer',
+            'entry_device_id' => 'integer',
+            'exit_device_id' => 'integer',
         ];
+    }
+
+    public function event(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(ParkingEvent::class, 'event_id');
+    }
+
+    public function entryDevice(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(ParkingDevice::class, 'entry_device_id');
+    }
+
+    public function exitDevice(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(ParkingDevice::class, 'exit_device_id');
     }
 
     /**

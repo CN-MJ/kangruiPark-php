@@ -11,7 +11,7 @@ class MerchantSeeder extends Seeder
     {
         $merchants = [
             [
-                'name' => '康瑞科技有限公司',
+                'name' => '赣南健康科技有限公司',
                 'contact_name' => '张经理',
                 'contact_phone' => '13800001001',
                 'location' => 'A栋 3层',
@@ -60,6 +60,7 @@ class MerchantSeeder extends Seeder
                 [
                     ...$merchant,
                     'status' => Merchant::STATUS_ACTIVE,
+                    'password' => '123456',
                 ]
             );
         }

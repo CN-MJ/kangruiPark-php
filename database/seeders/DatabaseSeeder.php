@@ -21,6 +21,9 @@ class DatabaseSeeder extends Seeder
             BuildingHouseSeeder::class,
             PolicySeeder::class,
             ActivitySeeder::class,
+            ParkingDeviceSeeder::class,
+            EnterpriseCategorySeeder::class,
+            EnterpriseSeeder::class,
         ]);
     }
 }

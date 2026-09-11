@@ -19,19 +19,57 @@ class User extends Model
         'phone',
         'name',
         'role',
+        'password',
+        'openid',
+        'phone_verified_at',
+        'can_escalate',
         'checked_in_at',
+        'merchant_apply_status',
+        'merchant_applied_at',
+    ];
+
+    public const APPLY_NONE = 'none';
+
+    public const APPLY_PENDING = 'pending';
+
+    public const APPLY_APPROVED = 'approved';
+
+    public const APPLY_REJECTED = 'rejected';
+
+    protected $hidden = [
+        'password',
+        'can_escalate',
     ];
 
     protected function casts(): array
     {
         return [
             'checked_in_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'merchant_applied_at' => 'datetime',
+            'can_escalate' => 'boolean',
+            'password' => 'hashed',
         ];
     }
 
     public function tokens(): HasMany
     {
         return $this->hasMany(UserToken::class);
+    }
+
+    public function superTokens(): HasMany
+    {
+        return $this->hasMany(SuperToken::class);
+    }
+
+    public function canEscalate(): bool
+    {
+        return (bool) $this->can_escalate;
+    }
+
+    public function vehicles(): HasMany
+    {
+        return $this->hasMany(UserVehicle::class);
     }
 
     public function isPark(): bool

@@ -1,6 +1,6 @@
-# KangruiPark PHP API
+# 赣南健康城 PHP API
 
-康瑞园区微信小程序后端 API，基于 Laravel 11.x 构建。
+赣南健康城微信小程序后端 API，基于 Laravel 11.x 构建。
 
 ## 环境要求
 

@@ -132,6 +132,6 @@ return [
     |
     */
 
-    'total_parking_spots' => (int) env('TOTAL_PARKING_SPOTS', 100),
+    'total_parking_spots' => (int) env('TOTAL_PARKING_SPOTS', config('parking.total_spots', 100)),
 
 ];
