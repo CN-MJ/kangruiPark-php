@@ -17,6 +17,7 @@ use App\Services\AdminAuditLogger;
 use App\Services\AuthTokenService;
 use App\Services\CaptchaService;
 use App\Services\LoginRateLimiter;
+use App\Support\ParkPermissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -125,9 +126,11 @@ class SuperConsoleController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('super_user');
         $this->authTokenService->revokeSuperToken($request->bearerToken());
-        $this->auditLogger->log($user, 'super.logout', 'user', (string) $user->id, null, $request);
+        $this->auditLogger->log($user, 'super.logout', 'user', (string) $user->id, [
+            'note' => '仅吊销超管会话，不影响微信个人登录',
+        ], $request);
 
-        return $this->success(null, '已退出控制台');
+        return $this->success(null, '已退出控制台（微信登录仍有效）');
     }
 
     public function me(Request $request): JsonResponse
@@ -140,6 +143,10 @@ class SuperConsoleController extends Controller
             'phone' => $user->phone,
             'name' => $user->name,
             'role' => $user->role,
+            'session' => 'super',
+            'park_act_as_header' => \App\Http\Middleware\ParkAuth::ACT_AS_HEADER,
+            'can_act_as_park' => true,
+            'expires_hint_hours' => (int) config('auth_security.super.token_ttl_hours', 4),
         ]);
     }
 
@@ -183,18 +190,37 @@ class SuperConsoleController extends Controller
 
         $paginator = $query->paginate(20);
         $paginator->getCollection()->transform(function (User $item) {
+            $parkRole = $item->isPark()
+                ? ParkPermissions::normalizeRole($item->park_role ?? null)
+                : null;
+
             return [
                 'id' => $item->id,
                 'phone' => $item->phone,
                 'name' => $item->name,
                 'role' => $item->role,
+                'park_role' => $parkRole,
+                'park_role_text' => $parkRole
+                    ? (ParkPermissions::roleLabels()[$parkRole] ?? $parkRole)
+                    : null,
+                'can_escalate' => $item->canEscalate(),
                 'phone_verified' => $item->phone_verified_at !== null,
                 'checked_in_at' => $item->checked_in_at,
                 'created_at' => $item->created_at,
             ];
         });
 
-        return $this->success($paginator);
+        return $this->success([
+            'data' => $paginator->items(),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+            ],
+            'park_roles' => collect(ParkPermissions::roleLabels())
+                ->map(fn ($label, $key) => ['value' => $key, 'label' => $label])
+                ->values(),
+        ]);
     }
 
     public function updateUser(Request $request, int $id): JsonResponse
@@ -207,28 +233,71 @@ class SuperConsoleController extends Controller
             return $this->error('用户不存在', 404);
         }
 
+        $parkRoleKeys = implode(',', array_keys(ParkPermissions::roleMap()));
         $validated = $request->validate([
             'name' => 'nullable|string|max:50',
             'role' => 'nullable|string|in:visitor,merchant,park',
+            'park_role' => 'nullable|string|in:'.$parkRoleKeys,
+            'can_escalate' => 'nullable|boolean',
+            'password' => 'nullable|string|min:'.((int) config('auth_security.password.min_length', 8)),
         ]);
 
         $before = [
             'name' => $target->name,
             'role' => $target->role,
+            'park_role' => $target->park_role,
+            'can_escalate' => (bool) $target->can_escalate,
         ];
 
-        $target->fill(array_filter($validated, fn ($v) => $v !== null));
+        if (array_key_exists('name', $validated) && $validated['name'] !== null) {
+            $target->name = $validated['name'];
+        }
+        if (array_key_exists('role', $validated) && $validated['role'] !== null) {
+            $target->role = $validated['role'];
+        }
+        if (array_key_exists('can_escalate', $validated) && $validated['can_escalate'] !== null) {
+            $target->can_escalate = (bool) $validated['can_escalate'];
+        }
+
+        if ($target->role === User::ROLE_PARK) {
+            if (array_key_exists('park_role', $validated) && $validated['park_role']) {
+                $target->park_role = ParkPermissions::normalizeRole($validated['park_role']);
+            } elseif (! $target->park_role) {
+                $target->park_role = ParkPermissions::ROLE_ADMIN;
+            }
+        } else {
+            $target->park_role = null;
+        }
+
+        $passwordChanged = false;
+        if (! empty($validated['password'])) {
+            $target->password = $validated['password'];
+            $passwordChanged = true;
+        }
+
         $target->save();
+
+        $roleOrPermChanged = ($before['role'] !== $target->role)
+            || (($before['park_role'] ?? null) !== ($target->park_role ?? null));
+        if ($roleOrPermChanged || $passwordChanged) {
+            $target->tokens()->delete();
+            $target->superTokens()->delete();
+        }
 
         $after = [
             'name' => $target->name,
             'role' => $target->role,
+            'park_role' => $target->park_role,
+            'can_escalate' => (bool) $target->can_escalate,
         ];
         $changes = [];
         foreach ($after as $key => $value) {
             if (($before[$key] ?? null) !== $value) {
                 $changes[$key] = ['from' => $before[$key] ?? null, 'to' => $value];
             }
+        }
+        if ($passwordChanged) {
+            $changes['password'] = ['from' => '(hidden)', 'to' => '(updated)'];
         }
 
         $this->auditLogger->log($actor, 'user.update', 'user', (string) $target->id, [
@@ -241,12 +310,22 @@ class SuperConsoleController extends Controller
             'changes' => $changes,
         ], $request);
 
+        $parkRole = $target->isPark()
+            ? ParkPermissions::normalizeRole($target->park_role ?? null)
+            : null;
+
         return $this->success([
             'id' => $target->id,
             'phone' => $target->phone,
             'name' => $target->name,
             'role' => $target->role,
-        ], '已更新');
+            'park_role' => $parkRole,
+            'park_role_text' => $parkRole
+                ? (ParkPermissions::roleLabels()[$parkRole] ?? $parkRole)
+                : null,
+            'can_escalate' => $target->canEscalate(),
+            'sessions_revoked' => $roleOrPermChanged || $passwordChanged,
+        ], $roleOrPermChanged || $passwordChanged ? '已更新，该用户需重新登录' : '已更新');
     }
 
     public function auditLogs(Request $request): JsonResponse

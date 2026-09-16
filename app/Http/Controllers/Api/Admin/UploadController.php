@@ -22,16 +22,19 @@ class UploadController extends Controller
     {
         $purpose = $request->input('purpose', 'news');
         $isEnterprise = $purpose === 'enterprise';
+        $isServiceTeam = $purpose === 'service_team';
 
         // 允许上传稍大，服务端再压缩到硬上限
         $uploadMaxKb = 8192;
         $hardMaxBytes = $isEnterprise ? 2_097_152 : 4_194_304;
         $softBytes = $isEnterprise ? 1_048_576 : 1_572_864;
-        $folder = $isEnterprise ? 'uploads/enterprises' : 'uploads/news';
+        $folder = $isEnterprise
+            ? 'uploads/enterprises'
+            : ($isServiceTeam ? 'uploads/service-teams' : 'uploads/news');
 
         $request->validate([
             'file' => "required|image|mimes:jpeg,png,jpg,webp|max:{$uploadMaxKb}",
-            'purpose' => 'nullable|string|in:news,enterprise',
+            'purpose' => 'nullable|string|in:news,enterprise,service_team',
         ]);
 
         $stored = $request->file('file')->store($folder, 'public');

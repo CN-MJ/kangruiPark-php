@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ParkingConfirmController;
 use App\Http\Controllers\Api\ParkingController;
 use App\Http\Controllers\Api\PasswordController;
 use App\Http\Controllers\Api\PolicyController;
+use App\Http\Controllers\Api\ServiceTeamController;
 use App\Http\Controllers\Api\SuperConsoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserVehicleController;
@@ -43,12 +44,15 @@ Route::get('/houses', [HouseController::class, 'index']);
 Route::get('/houses/{id}', [HouseController::class, 'show']);
 Route::get('/policies', [PolicyController::class, 'index']);
 Route::get('/policies/{id}', [PolicyController::class, 'show']);
+Route::get('/service-teams', [ServiceTeamController::class, 'index']);
+Route::get('/service-teams/{id}', [ServiceTeamController::class, 'show']);
 Route::get('/activities', [ActivityController::class, 'index']);
 Route::get('/activities/{id}', [ActivityController::class, 'show']);
 Route::post('/activities/{id}/register', [ActivityController::class, 'register']);
 
 // 企业库（公开浏览与筛选）
 Route::get('/enterprise-categories', [EnterpriseCategoryController::class, 'index']);
+Route::get('/enterprise-districts', [EnterpriseController::class, 'districts']);
 Route::get('/enterprises', [EnterpriseController::class, 'index']);
 Route::get('/enterprises/{id}', [EnterpriseController::class, 'show']);
 
@@ -76,6 +80,8 @@ Route::prefix('news')->group(function () {
 // 用户角色：访客走微信授权；园区/商户走账号密码+图形验证码
 Route::post('/users/sync', [UserController::class, 'sync']);
 Route::post('/users/wechat-phone-login', [UserController::class, 'wechatPhoneLogin']);
+Route::get('/users/login-options', [UserController::class, 'loginOptions']);
+Route::post('/users/logout', [UserController::class, 'logout'])->middleware('user.auth');
 Route::post('/users/checkin', [UserController::class, 'checkin'])->middleware('user.auth');
 Route::post('/park/login', [UserController::class, 'parkLogin']);
 Route::post('/merchant/login', [MerchantAuthController::class, 'login']);
@@ -112,61 +118,97 @@ Route::prefix('merchant')->middleware('merchant.auth')->group(function () {
     Route::patch('/appointments/{id}/reject', [MerchantAppointmentController::class, 'reject']);
 });
 
-// 园区工作台（园区 Token 或超管升权 Token）
+// 园区工作台（园区 Token 或超管升权 Token）+ 轻量 RBAC
 Route::prefix('park')->middleware(['park.auth', 'park.audit'])->group(function () {
     Route::post('/logout', [UserController::class, 'parkLogout']);
     Route::get('/me', [UserController::class, 'parkMe']);
     Route::post('/change-password', [PasswordController::class, 'changeParkPassword']);
-    Route::get('/dashboard', [\App\Http\Controllers\Api\Admin\DashboardController::class, 'index']);
+    Route::get('/dashboard', [\App\Http\Controllers\Api\Admin\DashboardController::class, 'index'])
+        ->middleware('park.can:dashboard');
 
-    Route::get('/users', [\App\Http\Controllers\Api\Admin\UserController::class, 'index']);
-    Route::post('/users/{id}/approve-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'approveMerchant']);
-    Route::post('/users/{id}/reject-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'rejectMerchant']);
+    Route::middleware('park.can:users')->group(function () {
+        Route::get('/users', [\App\Http\Controllers\Api\Admin\UserController::class, 'index']);
+        Route::post('/users/{id}/approve-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'approveMerchant']);
+        Route::post('/users/{id}/reject-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'rejectMerchant']);
+    });
 
-    Route::get('/enterprise-categories', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'index']);
-    Route::post('/enterprise-categories/sync-defaults', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'syncDefaults']);
-    Route::post('/enterprise-categories', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'store']);
-    Route::put('/enterprise-categories/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'update']);
-    Route::delete('/enterprise-categories/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'destroy']);
+    Route::get('/enterprise-categories', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'index'])
+        ->middleware('park.can:categories_read,categories');
+    Route::middleware('park.can:categories')->group(function () {
+        Route::post('/enterprise-categories/sync-defaults', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'syncDefaults']);
+        Route::post('/enterprise-categories', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'store']);
+        Route::put('/enterprise-categories/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'update']);
+        Route::delete('/enterprise-categories/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'destroy']);
+    });
 
-    Route::get('/enterprises', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'index']);
-    Route::post('/enterprises', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'store']);
-    Route::get('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'show']);
-    Route::put('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'update']);
-    Route::delete('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'destroy']);
+    Route::middleware('park.can:enterprises')->group(function () {
+        Route::get('/enterprises', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'index']);
+        Route::post('/enterprises', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'store']);
+        Route::get('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'show']);
+        Route::put('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'update']);
+        Route::delete('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'destroy']);
+    });
 
-    Route::get('/appointments', [\App\Http\Controllers\Api\Admin\AppointmentController::class, 'index']);
-    Route::patch('/appointments/{id}/cancel', [\App\Http\Controllers\Api\Admin\AppointmentController::class, 'cancel']);
-    Route::patch('/appointments/{id}/confirm', [\App\Http\Controllers\Api\Admin\AppointmentActionController::class, 'confirm']);
-    Route::patch('/appointments/{id}/reject', [\App\Http\Controllers\Api\Admin\AppointmentActionController::class, 'reject']);
-    Route::get('/houses', [\App\Http\Controllers\Api\Admin\HouseController::class, 'index']);
-    Route::post('/houses', [\App\Http\Controllers\Api\Admin\HouseController::class, 'store']);
-    Route::get('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'show']);
-    Route::put('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'update']);
-    Route::delete('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'destroy']);
-    Route::get('/investments', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'index']);
-    Route::get('/investments/{id}', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'show']);
-    Route::patch('/investments/{id}/status', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'updateStatus']);
-    Route::get('/policies', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'index']);
-    Route::post('/policies', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'store']);
-    Route::get('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'show']);
-    Route::put('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'update']);
-    Route::delete('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'destroy']);
-    Route::get('/activities/{id}/registrations', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'registrations']);
-    Route::get('/activities', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'index']);
-    Route::post('/activities', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'store']);
-    Route::get('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'show']);
-    Route::put('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'update']);
-    Route::delete('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'destroy']);
+    Route::middleware('park.can:appointments')->group(function () {
+        Route::get('/appointments', [\App\Http\Controllers\Api\Admin\AppointmentController::class, 'index']);
+        Route::patch('/appointments/{id}/cancel', [\App\Http\Controllers\Api\Admin\AppointmentController::class, 'cancel']);
+        Route::patch('/appointments/{id}/confirm', [\App\Http\Controllers\Api\Admin\AppointmentActionController::class, 'confirm']);
+        Route::patch('/appointments/{id}/reject', [\App\Http\Controllers\Api\Admin\AppointmentActionController::class, 'reject']);
+    });
 
-    Route::get('/parking/records', [\App\Http\Controllers\Api\Admin\ParkingController::class, 'index']);
-    Route::patch('/parking/{id}/exit', [\App\Http\Controllers\Api\Admin\ParkingController::class, 'exit']);
+    Route::middleware('park.can:houses')->group(function () {
+        Route::get('/houses', [\App\Http\Controllers\Api\Admin\HouseController::class, 'index']);
+        Route::post('/houses', [\App\Http\Controllers\Api\Admin\HouseController::class, 'store']);
+        Route::get('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'show']);
+        Route::put('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'update']);
+        Route::delete('/houses/{id}', [\App\Http\Controllers\Api\Admin\HouseController::class, 'destroy']);
+    });
 
-    Route::get('/news', [\App\Http\Controllers\Api\Admin\NewsController::class, 'index']);
-    Route::get('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'show']);
-    Route::post('/news', [\App\Http\Controllers\Api\Admin\NewsController::class, 'store']);
-    Route::post('/upload', [\App\Http\Controllers\Api\Admin\UploadController::class, 'store']);
-    Route::put('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'update']);
-    Route::delete('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'destroy']);
-    Route::patch('/news/{id}/top', [\App\Http\Controllers\Api\Admin\NewsController::class, 'toggleTop']);
+    Route::middleware('park.can:investments')->group(function () {
+        Route::get('/investments', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'index']);
+        Route::get('/investments/{id}', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'show']);
+        Route::patch('/investments/{id}/status', [\App\Http\Controllers\Api\Admin\InvestmentController::class, 'updateStatus']);
+    });
+
+    Route::middleware('park.can:policies')->group(function () {
+        Route::get('/policies', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'index']);
+        Route::post('/policies', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'store']);
+        Route::get('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'show']);
+        Route::put('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'update']);
+        Route::delete('/policies/{id}', [\App\Http\Controllers\Api\Admin\PolicyController::class, 'destroy']);
+    });
+
+    Route::middleware('park.can:service_teams')->group(function () {
+        Route::get('/service-teams', [\App\Http\Controllers\Api\Admin\ServiceTeamController::class, 'index']);
+        Route::post('/service-teams', [\App\Http\Controllers\Api\Admin\ServiceTeamController::class, 'store']);
+        Route::get('/service-teams/{id}', [\App\Http\Controllers\Api\Admin\ServiceTeamController::class, 'show']);
+        Route::put('/service-teams/{id}', [\App\Http\Controllers\Api\Admin\ServiceTeamController::class, 'update']);
+        Route::delete('/service-teams/{id}', [\App\Http\Controllers\Api\Admin\ServiceTeamController::class, 'destroy']);
+    });
+
+    Route::middleware('park.can:activities')->group(function () {
+        Route::get('/activities/{id}/registrations', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'registrations']);
+        Route::get('/activities', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'index']);
+        Route::post('/activities', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'store']);
+        Route::get('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'show']);
+        Route::put('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'update']);
+        Route::delete('/activities/{id}', [\App\Http\Controllers\Api\Admin\ActivityController::class, 'destroy']);
+    });
+
+    Route::middleware('park.can:parking')->group(function () {
+        Route::get('/parking/records', [\App\Http\Controllers\Api\Admin\ParkingController::class, 'index']);
+        Route::patch('/parking/{id}/exit', [\App\Http\Controllers\Api\Admin\ParkingController::class, 'exit']);
+    });
+
+    Route::middleware('park.can:news')->group(function () {
+        Route::get('/news', [\App\Http\Controllers\Api\Admin\NewsController::class, 'index']);
+        Route::get('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'show']);
+        Route::post('/news', [\App\Http\Controllers\Api\Admin\NewsController::class, 'store']);
+        Route::put('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'update']);
+        Route::delete('/news/{id}', [\App\Http\Controllers\Api\Admin\NewsController::class, 'destroy']);
+        Route::patch('/news/{id}/top', [\App\Http\Controllers\Api\Admin\NewsController::class, 'toggleTop']);
+    });
+
+    Route::post('/upload', [\App\Http\Controllers\Api\Admin\UploadController::class, 'store'])
+        ->middleware('park.can:upload');
 });

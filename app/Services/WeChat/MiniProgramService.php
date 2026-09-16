@@ -14,6 +14,11 @@ class MiniProgramService
 {
     public function isMock(): bool
     {
+        // 生产环境一律禁止 mock，避免误开导致假手机号登录
+        if (app()->environment('production')) {
+            return false;
+        }
+
         if ((bool) config('wechat.mini.mock', false)) {
             return true;
         }

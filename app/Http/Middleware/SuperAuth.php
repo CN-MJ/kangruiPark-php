@@ -2,13 +2,17 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\SuperToken;
+use App\Services\AuthTokenService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class SuperAuth
 {
+    public function __construct(
+        private readonly AuthTokenService $authTokens,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $token = $request->bearerToken();
@@ -21,11 +25,7 @@ class SuperAuth
             ], 401);
         }
 
-        $superToken = SuperToken::query()
-            ->where('token', $token)
-            ->where('expires_at', '>', now())
-            ->with('user')
-            ->first();
+        $superToken = $this->authTokens->findSuperToken($token);
 
         if (! $superToken || ! $superToken->user || ! $superToken->user->canEscalate()) {
             return response()->json([

@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class User extends Model
+class User extends Authenticatable
 {
     protected $table = 'xcx_users';
 
@@ -19,6 +19,7 @@ class User extends Model
         'phone',
         'name',
         'role',
+        'park_role',
         'password',
         'openid',
         'phone_verified_at',
@@ -80,5 +81,15 @@ class User extends Model
     public function isMerchant(): bool
     {
         return $this->role === self::ROLE_MERCHANT;
+    }
+
+    public function parkRoleKey(): string
+    {
+        return \App\Support\ParkPermissions::normalizeRole($this->park_role);
+    }
+
+    public function hasParkPermission(string $permission): bool
+    {
+        return \App\Support\ParkPermissions::allows($this, $permission);
     }
 }

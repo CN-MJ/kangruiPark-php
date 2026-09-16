@@ -7,6 +7,7 @@ use App\Http\Traits\ApiResponse;
 use App\Models\Enterprise;
 use App\Models\EnterpriseCategory;
 use App\Models\User;
+use App\Support\GanzhouDistrict;
 use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -46,6 +47,12 @@ class EnterpriseController extends Controller
         if ($request->filled('settle_in_park')) {
             $query->where('settle_in_park', filter_var($request->input('settle_in_park'), FILTER_VALIDATE_BOOLEAN));
         }
+        if ($request->filled('district')) {
+            $district = trim((string) $request->input('district'));
+            if (GanzhouDistrict::isValid($district)) {
+                $query->where('district', $district);
+            }
+        }
         if ($request->filled('keyword')) {
             $keyword = trim((string) $request->input('keyword'));
             if ($keyword !== '' && strcasecmp($keyword, 'undefined') !== 0 && strcasecmp($keyword, 'null') !== 0) {
@@ -53,7 +60,9 @@ class EnterpriseController extends Controller
                     $q->where('name', 'like', "%{$keyword}%")
                         ->orWhere('business_intro', 'like', "%{$keyword}%")
                         ->orWhere('contact_name', 'like', "%{$keyword}%")
-                        ->orWhere('contact_phone', 'like', "%{$keyword}%");
+                        ->orWhere('contact_phone', 'like', "%{$keyword}%")
+                        ->orWhere('address', 'like', "%{$keyword}%")
+                        ->orWhere('district', 'like', "%{$keyword}%");
                 });
             }
         }
@@ -149,6 +158,7 @@ class EnterpriseController extends Controller
             ],
             'business_intro' => 'required|string|max:2000',
             'address' => 'nullable|string|max:255',
+            'district' => ['nullable', 'string', Rule::in(GanzhouDistrict::NAMES)],
             'latitude' => 'nullable|numeric',
             'longitude' => 'nullable|numeric',
             'map_enabled' => 'nullable|boolean',
@@ -191,6 +201,17 @@ class EnterpriseController extends Controller
         )));
         $data['status'] = (int) ($data['status'] ?? Enterprise::STATUS_ON);
 
+        $manualDistrict = isset($data['district']) ? trim((string) $data['district']) : '';
+        if ($manualDistrict !== '' && GanzhouDistrict::isValid($manualDistrict)) {
+            $data['district'] = $manualDistrict;
+        } else {
+            $data['district'] = GanzhouDistrict::resolve(
+                $data['address'] ?? null,
+                $data['latitude'] ?? null,
+                $data['longitude'] ?? null,
+            );
+        }
+
         return $data;
     }
 
@@ -211,6 +232,7 @@ class EnterpriseController extends Controller
             'category_ids' => $e->categories->pluck('id')->values(),
             'business_intro' => $e->business_intro,
             'address' => $e->address,
+            'district' => $e->district,
             'latitude' => $e->latitude,
             'longitude' => $e->longitude,
             'map_enabled' => (bool) $e->map_enabled,

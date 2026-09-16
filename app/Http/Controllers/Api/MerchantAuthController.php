@@ -24,6 +24,10 @@ class MerchantAuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        if (! config('auth_security.merchant.workbench_enabled', false)) {
+            return $this->error('商户工作台已停用。企业信息请使用园区工作台「企业库」维护，或联系园区管理员。', 410);
+        }
+
         $minLen = (int) config('auth_security.password.min_length', 6);
         $validated = $request->validate([
             'phone' => 'required|string|max:20',

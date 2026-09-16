@@ -9,6 +9,7 @@ use App\Services\AuthTokenService;
 use App\Services\CaptchaService;
 use App\Services\LoginRateLimiter;
 use App\Services\WeChat\MiniProgramService;
+use App\Support\ParkPermissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -85,10 +86,7 @@ class UserController extends Controller
         $user = User::query()->where('openid', $openid)->first()
             ?: User::query()->where('phone', $phone)->first();
 
-        if ($user && $user->isPark()) {
-            return $this->error('园区人员请从「园区工作台」登录', 403);
-        }
-
+        // 园区人员也可微信授权拿个人会话（才能看到工作台入口）；工作台仍须单独账号密码登录
         if (! $user) {
             $user = User::query()->create([
                 'phone' => $phone,
@@ -181,9 +179,35 @@ class UserController extends Controller
 
     public function parkLogout(Request $request): JsonResponse
     {
+        $bearer = $request->bearerToken();
+        if ($request->attributes->get('via_super')) {
+            $this->authTokenService->revokeSuperToken($bearer);
+        } else {
+            $this->authTokenService->revokeUserToken($bearer);
+        }
+
+        return $this->success(null, '已退出登录');
+    }
+
+    /**
+     * 访客退出：吊销当前 user_token（客户端再清本地资料）
+     */
+    public function logout(Request $request): JsonResponse
+    {
         $this->authTokenService->revokeUserToken($request->bearerToken());
 
         return $this->success(null, '已退出登录');
+    }
+
+    /**
+     * 登录页探测：是否允许开发 Mock（生产恒为 false）
+     */
+    public function loginOptions(): JsonResponse
+    {
+        return $this->success([
+            'mock_enabled' => $this->miniProgram->isMock(),
+            'merchant_workbench_enabled' => (bool) config('auth_security.merchant.workbench_enabled', false),
+        ]);
     }
 
     public function parkMe(Request $request): JsonResponse
@@ -195,7 +219,7 @@ class UserController extends Controller
 
     private function formatUser(User $user): array
     {
-        return [
+        $data = [
             'id' => $user->id,
             'phone' => $user->phone,
             'name' => $user->name,
@@ -206,6 +230,19 @@ class UserController extends Controller
             'merchant_apply_status' => $user->merchant_apply_status ?: User::APPLY_NONE,
             'merchant_applied_at' => $user->merchant_applied_at,
         ];
+
+        if ($user->isPark() || $user->canEscalate()) {
+            $parkRole = ParkPermissions::normalizeRole($user->park_role ?? null);
+            // 超管升权进工作台时按管理员能力展示
+            if ($user->canEscalate() && ! $user->isPark()) {
+                $parkRole = ParkPermissions::ROLE_ADMIN;
+            }
+            $data['park_role'] = $parkRole;
+            $data['park_role_text'] = ParkPermissions::roleLabels()[$parkRole] ?? $parkRole;
+            $data['permissions'] = ParkPermissions::permissionsForRole($parkRole);
+        }
+
+        return $data;
     }
 
     private function roleText(string $role): string

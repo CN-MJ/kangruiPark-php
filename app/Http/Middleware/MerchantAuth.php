@@ -2,15 +2,27 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\MerchantToken;
+use App\Services\AuthTokenService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class MerchantAuth
 {
+    public function __construct(
+        private readonly AuthTokenService $authTokens,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
+        if (! config('auth_security.merchant.workbench_enabled', false)) {
+            return response()->json([
+                'code' => 410,
+                'msg' => '商户工作台已停用',
+                'data' => null,
+            ], 410);
+        }
+
         $token = $request->bearerToken();
 
         if (! $token) {
@@ -21,11 +33,7 @@ class MerchantAuth
             ], 401);
         }
 
-        $merchantToken = MerchantToken::query()
-            ->where('token', $token)
-            ->where('expires_at', '>', now())
-            ->with('merchant')
-            ->first();
+        $merchantToken = $this->authTokens->findMerchantToken($token);
 
         if (! $merchantToken || ! $merchantToken->merchant || (int) $merchantToken->merchant->status !== 1) {
             return response()->json([

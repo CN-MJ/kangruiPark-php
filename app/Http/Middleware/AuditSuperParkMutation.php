@@ -52,7 +52,10 @@ class AuditSuperParkMutation
             $built['action'],
             $built['target_type'],
             $built['target_id'],
-            $built['payload'],
+            array_merge($built['payload'] ?? [], [
+                'via_super' => true,
+                'park_act_as' => true,
+            ]),
             $request
         );
 

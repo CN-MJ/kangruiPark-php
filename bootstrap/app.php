@@ -21,11 +21,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
             'park.auth' => \App\Http\Middleware\ParkAuth::class,
+            'park.can' => \App\Http\Middleware\ParkCan::class,
             'merchant.auth' => \App\Http\Middleware\MerchantAuth::class,
             'user.auth' => \App\Http\Middleware\UserAuth::class,
             'device.auth' => \App\Http\Middleware\DeviceAuth::class,
             'super.auth' => \App\Http\Middleware\SuperAuth::class,
             'park.audit' => \App\Http\Middleware\AuditSuperParkMutation::class,
+            'park.web' => \App\Http\Middleware\EnsureParkWebAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

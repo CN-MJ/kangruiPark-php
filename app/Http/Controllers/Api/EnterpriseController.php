@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\Enterprise;
+use App\Support\GanzhouDistrict;
 use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,13 @@ use Illuminate\Http\Request;
 class EnterpriseController extends Controller
 {
     use ApiResponse;
+
+    public function districts(): JsonResponse
+    {
+        return $this->success([
+            'list' => GanzhouDistrict::options(),
+        ]);
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -34,6 +42,13 @@ class EnterpriseController extends Controller
             $query->whereHas('categories', fn ($q) => $q->where('enterprise_categories.id', $categoryId));
         }
 
+        if ($request->filled('district')) {
+            $district = trim((string) $request->input('district'));
+            if (GanzhouDistrict::isValid($district)) {
+                $query->where('district', $district);
+            }
+        }
+
         if ($request->filled('service_audience')) {
             $query->where('service_audience', $request->input('service_audience'));
         }
@@ -52,6 +67,7 @@ class EnterpriseController extends Controller
                 $q->where('name', 'like', "%{$keyword}%")
                     ->orWhere('business_intro', 'like', "%{$keyword}%")
                     ->orWhere('address', 'like', "%{$keyword}%")
+                    ->orWhere('district', 'like', "%{$keyword}%")
                     ->orWhere('contact_name', 'like', "%{$keyword}%");
             });
         }
@@ -98,6 +114,7 @@ class EnterpriseController extends Controller
             'name' => $e->name,
             'business_intro' => $e->business_intro,
             'address' => $e->address,
+            'district' => $e->district,
             'map_enabled' => (bool) $e->map_enabled,
             'latitude' => $e->map_enabled ? $e->latitude : null,
             'longitude' => $e->map_enabled ? $e->longitude : null,

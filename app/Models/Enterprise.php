@@ -29,6 +29,7 @@ class Enterprise extends Model
         'primary_category_id',
         'business_intro',
         'address',
+        'district',
         'latitude',
         'longitude',
         'map_enabled',

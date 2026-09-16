@@ -2,13 +2,17 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\UserToken;
+use App\Services\AuthTokenService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class UserAuth
 {
+    public function __construct(
+        private readonly AuthTokenService $authTokens,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $token = $request->bearerToken();
@@ -21,11 +25,7 @@ class UserAuth
             ], 401);
         }
 
-        $userToken = UserToken::query()
-            ->where('token', $token)
-            ->where('expires_at', '>', now())
-            ->with('user')
-            ->first();
+        $userToken = $this->authTokens->findUserToken($token);
 
         if (! $userToken || ! $userToken->user) {
             return response()->json([

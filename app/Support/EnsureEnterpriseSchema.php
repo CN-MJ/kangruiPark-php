@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Enterprise;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
@@ -50,6 +51,7 @@ class EnsureEnterpriseSchema
                 $table->foreignId('primary_category_id')->constrained('enterprise_categories')->restrictOnDelete();
                 $table->text('business_intro');
                 $table->string('address', 255)->nullable();
+                $table->string('district', 20)->nullable()->comment('赣州县区');
                 $table->decimal('latitude', 10, 7)->nullable();
                 $table->decimal('longitude', 10, 7)->nullable();
                 $table->boolean('map_enabled')->default(false);
@@ -65,7 +67,29 @@ class EnsureEnterpriseSchema
                 $table->index('service_audience');
                 $table->index('source');
                 $table->index('settle_in_park');
+                $table->index('district');
             });
+        } elseif (! Schema::hasColumn('enterprises', 'district')) {
+            Schema::table('enterprises', function (Blueprint $table) {
+                $table->string('district', 20)->nullable()->after('address')->comment('赣州县区');
+                $table->index('district');
+            });
+
+            if (class_exists(Enterprise::class)) {
+                Enterprise::query()->orderBy('id')->chunkById(100, function ($rows) {
+                    foreach ($rows as $enterprise) {
+                        $district = GanzhouDistrict::resolve(
+                            $enterprise->address,
+                            $enterprise->latitude,
+                            $enterprise->longitude,
+                        );
+                        if ($district && $enterprise->district !== $district) {
+                            $enterprise->district = $district;
+                            $enterprise->saveQuietly();
+                        }
+                    }
+                });
+            }
         }
 
         if (! Schema::hasTable('enterprise_category')) {
