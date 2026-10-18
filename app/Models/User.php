@@ -18,8 +18,14 @@ class User extends Authenticatable
     protected $fillable = [
         'phone',
         'name',
+        'avatar',
         'role',
         'park_role',
+        'staff_apply_status',
+        'staff_applied_at',
+        'staff_apply_note',
+        'staff_reviewed_at',
+        'staff_reject_reason',
         'password',
         'openid',
         'phone_verified_at',
@@ -48,6 +54,8 @@ class User extends Authenticatable
             'checked_in_at' => 'datetime',
             'phone_verified_at' => 'datetime',
             'merchant_applied_at' => 'datetime',
+            'staff_applied_at' => 'datetime',
+            'staff_reviewed_at' => 'datetime',
             'can_escalate' => 'boolean',
             'password' => 'hashed',
         ];

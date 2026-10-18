@@ -100,7 +100,7 @@ class MediaUrl
             $host = strtolower((string) $request->getHost());
             // 真机预览时应以实际请求 Host 为准；避免落到 localhost
             if ($host !== '' && ! in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
-                return rtrim($request->getSchemeAndHttpHost(), '/');
+                return self::preferHttps(rtrim($request->getSchemeAndHttpHost(), '/'), $request);
             }
         }
 
@@ -114,5 +114,23 @@ class MediaUrl
         }
 
         return $configured;
+    }
+
+    /**
+     * 宝塔里 PHP 经常只看到 http。小程序的图片组件不加载 http 图片，合法域名也只认 https。
+     * 局域网 IP 仍保持 http，方便本机调试。
+     */
+    private static function preferHttps(string $origin, Request $request): string
+    {
+        if (! str_starts_with($origin, 'http://')) {
+            return $origin;
+        }
+
+        $host = strtolower((string) $request->getHost());
+        if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP)) {
+            return $origin;
+        }
+
+        return 'https://'.substr($origin, strlen('http://'));
     }
 }

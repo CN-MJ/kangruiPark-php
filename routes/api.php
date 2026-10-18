@@ -82,7 +82,11 @@ Route::post('/users/sync', [UserController::class, 'sync']);
 Route::post('/users/wechat-phone-login', [UserController::class, 'wechatPhoneLogin']);
 Route::get('/users/login-options', [UserController::class, 'loginOptions']);
 Route::post('/users/logout', [UserController::class, 'logout'])->middleware('user.auth');
+Route::patch('/users/profile', [UserController::class, 'updateProfile'])->middleware('user.auth');
+Route::post('/users/avatar', [UserController::class, 'uploadAvatar'])->middleware('user.auth');
+Route::get('/users/avatar', [UserController::class, 'showAvatar'])->middleware('user.auth');
 Route::post('/users/checkin', [UserController::class, 'checkin'])->middleware('user.auth');
+Route::post('/users/staff-apply', [UserController::class, 'staffApply'])->middleware('user.auth');
 Route::post('/park/login', [UserController::class, 'parkLogin']);
 Route::post('/merchant/login', [MerchantAuthController::class, 'login']);
 Route::get('/auth/captcha', [CaptchaController::class, 'issue']);
@@ -128,8 +132,17 @@ Route::prefix('park')->middleware(['park.auth', 'park.audit'])->group(function (
 
     Route::middleware('park.can:users')->group(function () {
         Route::get('/users', [\App\Http\Controllers\Api\Admin\UserController::class, 'index']);
+        Route::patch('/users/{id}', [\App\Http\Controllers\Api\Admin\UserController::class, 'update']);
+        Route::post('/users/{id}/review-staff', [\App\Http\Controllers\Api\Admin\UserController::class, 'reviewStaff']);
         Route::post('/users/{id}/approve-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'approveMerchant']);
         Route::post('/users/{id}/reject-merchant', [\App\Http\Controllers\Api\Admin\UserController::class, 'rejectMerchant']);
+    });
+
+    Route::middleware('park.can:roles')->group(function () {
+        Route::get('/roles', [\App\Http\Controllers\Api\Admin\UserController::class, 'roles']);
+        Route::post('/roles', [\App\Http\Controllers\Api\Admin\UserController::class, 'storeRole']);
+        Route::put('/roles/{key}', [\App\Http\Controllers\Api\Admin\UserController::class, 'updateRole']);
+        Route::delete('/roles/{key}', [\App\Http\Controllers\Api\Admin\UserController::class, 'destroyRole']);
     });
 
     Route::get('/enterprise-categories', [\App\Http\Controllers\Api\Admin\EnterpriseCategoryController::class, 'index'])
