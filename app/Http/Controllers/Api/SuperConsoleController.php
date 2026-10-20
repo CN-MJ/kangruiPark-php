@@ -176,7 +176,11 @@ class SuperConsoleController extends Controller
 
     public function users(Request $request): JsonResponse
     {
-        $query = User::query()->orderByDesc('id');
+        $query = User::query()
+            ->where(function ($inner) {
+                $inner->where('can_escalate', false)->orWhereNull('can_escalate');
+            })
+            ->orderByDesc('id');
         if ($request->filled('role')) {
             $query->where('role', $request->input('role'));
         }
@@ -229,7 +233,7 @@ class SuperConsoleController extends Controller
         $actor = $request->attributes->get('super_user');
 
         $target = User::find($id);
-        if (! $target) {
+        if (! $target || $target->canEscalate()) {
             return $this->error('用户不存在', 404);
         }
 
@@ -254,9 +258,6 @@ class SuperConsoleController extends Controller
         }
         if (array_key_exists('role', $validated) && $validated['role'] !== null) {
             $target->role = $validated['role'];
-        }
-        if (array_key_exists('can_escalate', $validated) && $validated['can_escalate'] !== null) {
-            $target->can_escalate = (bool) $validated['can_escalate'];
         }
 
         if ($target->role === User::ROLE_PARK) {

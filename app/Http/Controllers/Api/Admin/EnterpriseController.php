@@ -11,6 +11,7 @@ use App\Support\GanzhouDistrict;
 use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class EnterpriseController extends Controller
@@ -121,7 +122,9 @@ class EnterpriseController extends Controller
         $categoryIds = $payload['category_ids'];
         unset($payload['category_ids']);
 
+        $previousImages = is_array($enterprise->images) ? $enterprise->images : [];
         $enterprise->update($payload);
+        $this->deleteUnusedEnterpriseImages($enterprise->id, $previousImages, $payload['images'] ?? []);
         $enterprise->categories()->sync($categoryIds);
         $enterprise->load(['primaryCategory:id,name,parent_id', 'categories:id,name,parent_id']);
 
@@ -213,6 +216,59 @@ class EnterpriseController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * 保存后删掉这次从列表里移除、且没有其它企业仍在使用的企业图片。
+     *
+     * @param  array<int, mixed>  $previous
+     * @param  array<int, mixed>  $current
+     */
+    private function deleteUnusedEnterpriseImages(int $enterpriseId, array $previous, array $current): void
+    {
+        $before = $this->enterpriseImagePaths($previous);
+        $after = $this->enterpriseImagePaths($current);
+        $removed = array_values(array_diff($before, $after));
+
+        foreach ($removed as $relative) {
+            $stillUsed = Enterprise::query()
+                ->where('id', '!=', $enterpriseId)
+                ->whereJsonContains('images', $relative)
+                ->exists();
+            if ($stillUsed) {
+                continue;
+            }
+
+            $diskFile = Storage::disk('public')->path($relative);
+            $publicFile = public_path('storage/'.$relative);
+            $diskReal = is_file($diskFile) ? realpath($diskFile) : false;
+            $publicReal = is_file($publicFile) ? realpath($publicFile) : false;
+
+            Storage::disk('public')->delete($relative);
+            if ($publicReal && $publicReal !== $diskReal && is_file($publicFile)) {
+                @unlink($publicFile);
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, mixed>  $images
+     * @return list<string>
+     */
+    private function enterpriseImagePaths(array $images): array
+    {
+        $paths = [];
+        foreach ($images as $image) {
+            if (! is_string($image)) {
+                continue;
+            }
+            $relative = MediaUrl::toRelative($image);
+            if ($relative !== null && str_starts_with($relative, 'uploads/enterprises/')) {
+                $paths[] = $relative;
+            }
+        }
+
+        return array_values(array_unique($paths));
     }
 
     private function format(Enterprise $e, ?Request $request = null): array

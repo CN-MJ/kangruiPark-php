@@ -19,7 +19,11 @@ class UserController extends Controller
 
     public function index(Request $request): View
     {
-        $query = User::query()->orderByDesc('id');
+        $query = User::query()
+            ->where(function ($inner) {
+                $inner->where('can_escalate', false)->orWhereNull('can_escalate');
+            })
+            ->orderByDesc('id');
 
         if ($request->filled('role')) {
             $query->where('role', $request->input('role'));
@@ -50,7 +54,7 @@ class UserController extends Controller
         $actor = Auth::guard('web')->user();
 
         $target = User::find($id);
-        if (! $target) {
+        if (! $target || $target->canEscalate()) {
             return back()->withErrors(['form' => '用户不存在']);
         }
 
@@ -72,7 +76,6 @@ class UserController extends Controller
 
         $target->name = $validated['name'] ?? $target->name;
         $target->role = $validated['role'];
-        $target->can_escalate = $request->boolean('can_escalate');
 
         if ($target->role === User::ROLE_PARK) {
             $target->park_role = ParkPermissions::normalizeRole($validated['park_role'] ?? null);

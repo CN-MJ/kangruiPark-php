@@ -18,6 +18,9 @@ class StaffDirectory
     {
         $this->ensureReady();
         $query = User::query()
+            ->where(function ($inner) {
+                $inner->where('can_escalate', false)->orWhereNull('can_escalate');
+            })
             ->orderByRaw("CASE staff_apply_status WHEN 'pending' THEN 0 ELSE 1 END")
             ->orderByDesc('staff_applied_at')
             ->orderByDesc('id');
@@ -53,7 +56,12 @@ class StaffDirectory
                 'total' => $list->total(),
                 'last_page' => $list->lastPage(),
             ],
-            'pending_count' => User::query()->where('staff_apply_status', User::APPLY_PENDING)->count(),
+            'pending_count' => User::query()
+                ->where('staff_apply_status', User::APPLY_PENDING)
+                ->where(function ($inner) {
+                    $inner->where('can_escalate', false)->orWhereNull('can_escalate');
+                })
+                ->count(),
             'park_roles' => $this->roleOptions(),
             'menus' => $this->menuOptions(),
             'can_configure' => true,
@@ -74,7 +82,6 @@ class StaffDirectory
             'name' => 'nullable|string|max:50',
             'role' => 'nullable|string|in:visitor,merchant,park',
             'park_role' => 'nullable|string|max:32',
-            'can_escalate' => 'nullable|boolean',
             'password' => 'nullable|string|min:'.$minLen,
         ], [
             'password.min' => "密码至少 {$minLen} 位",
@@ -112,10 +119,6 @@ class StaffDirectory
         } elseif ($before['role'] === User::ROLE_PARK) {
             $target->staff_apply_status = User::APPLY_NONE;
             $target->staff_reject_reason = null;
-        }
-
-        if ($viaSuper && array_key_exists('can_escalate', $validated) && $validated['can_escalate'] !== null) {
-            $target->can_escalate = (bool) $validated['can_escalate'];
         }
 
         $passwordChanged = false;
@@ -350,8 +353,8 @@ class StaffDirectory
         if (! $role) {
             throw new StaffRuleException('角色不存在', 404);
         }
-        if ($role->is_system || $role->key === ParkPermissions::ROLE_ADMIN) {
-            throw new StaffRuleException('系统角色不能删除');
+        if ($role->key === ParkPermissions::ROLE_ADMIN) {
+            throw new StaffRuleException('管理员角色不能删除');
         }
         $used = User::query()->where('role', User::ROLE_PARK)->where('park_role', $key)->count();
         if ($used > 0) {
@@ -420,7 +423,7 @@ class StaffDirectory
     {
         $this->ensureReady();
         $user = User::query()->find($id);
-        if (! $user) {
+        if (! $user || $user->canEscalate()) {
             throw new StaffRuleException('用户不存在', 404);
         }
 
