@@ -9,12 +9,46 @@ class BuildingHouseSeeder extends Seeder
 {
     public function run(): void
     {
-        $data = [
-            ['title' => 'A1栋 1201', 'area' => '360㎡', 'price' => '3980元/㎡', 'house_type' => '独立产权', 'description' => '临主路，适合研发总部。', 'images' => [], 'status' => 1, 'sort_order' => 10],
-            ['title' => 'B3栋 501', 'area' => '220㎡', 'price' => '3200元/㎡', 'house_type' => '灵活分割', 'description' => '近园区食堂，适合成长型团队。', 'images' => [], 'status' => 1, 'sort_order' => 9],
-        ];
-        foreach ($data as $item) {
-            BuildingHouse::query()->updateOrCreate(['title' => $item['title']], $item);
+        $path = database_path('seeders/data/building_houses.json');
+        if (! is_file($path)) {
+            $this->command?->error('缺少数据文件：database/seeders/data/building_houses.json');
+
+            return;
         }
+
+        $rows = json_decode((string) file_get_contents($path), true);
+        if (! is_array($rows) || $rows === []) {
+            $this->command?->error('房源 JSON 为空或格式错误');
+
+            return;
+        }
+
+        $count = 0;
+        foreach ($rows as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $payload = BuildingHouse::syncDerivedFields(array_merge([
+                'price' => '',
+                'description' => '',
+                'images' => [],
+                'lease_sale_status' => BuildingHouse::LEASE_AVAILABLE,
+                'status' => BuildingHouse::STATUS_ON_MARKET,
+                'sort_order' => 0,
+                'house_type' => '',
+            ], $item));
+
+            BuildingHouse::query()->updateOrCreate(
+                [
+                    'building_no' => $payload['building_no'],
+                    'room_no' => $payload['room_no'],
+                ],
+                $payload
+            );
+            $count++;
+        }
+
+        $this->command?->info("已导入/更新 {$count} 套房源");
     }
 }

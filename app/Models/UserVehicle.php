@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class UserVehicle extends Model
 {
+    use SoftDeleteFlag;
+
     public const STATUS_ACTIVE = 1;
 
     public const STATUS_INACTIVE = 0;

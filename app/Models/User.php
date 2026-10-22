@@ -3,10 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Concerns\SoftDeleteFlag;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
 class User extends Authenticatable
 {
+    use SoftDeleteFlag;
+
     protected $table = 'xcx_users';
 
     public const ROLE_VISITOR = 'visitor';

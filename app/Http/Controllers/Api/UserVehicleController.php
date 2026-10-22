@@ -52,16 +52,19 @@ class UserVehicleController extends Controller
 
         try {
             $vehicle = DB::transaction(function () use ($user, $plateKey, $isDefault) {
-                $existing = UserVehicle::query()
+                $existing = UserVehicle::withTrashed()
                     ->where('user_id', $user->id)
                     ->where('plate_number', $plateKey)
                     ->first();
 
-                if ($existing && (int) $existing->status === UserVehicle::STATUS_ACTIVE) {
+                if ($existing && ! $existing->trashed() && (int) $existing->status === UserVehicle::STATUS_ACTIVE) {
                     throw new \RuntimeException('DUPLICATE');
                 }
 
                 if ($existing) {
+                    if ($existing->trashed()) {
+                        $existing->restore();
+                    }
                     $existing->update(['status' => UserVehicle::STATUS_ACTIVE]);
                     $vehicle = $existing;
                 } else {

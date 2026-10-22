@@ -368,7 +368,7 @@ class StaffDirectory
             'key' => $key,
         ], 'park_role', $key);
 
-        return ['message' => '已删除角色'];
+        return ['message' => '已删除角色（可恢复）'];
     }
 
     /**

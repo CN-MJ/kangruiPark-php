@@ -43,6 +43,17 @@ class UserController extends Controller
         $user = User::query()->where('phone', $validated['phone'])->first();
 
         if (! $user) {
+            $trashed = User::onlyTrashed()->where('phone', $validated['phone'])->first();
+            if ($trashed) {
+                return $this->success([
+                    'phone' => $validated['phone'],
+                    'name' => $trashed->name ?: '园区访客',
+                    'role' => User::ROLE_VISITOR,
+                    'role_text' => $this->roleText(User::ROLE_VISITOR),
+                    'phone_verified' => false,
+                ], '请先微信授权手机号登录');
+            }
+
             return $this->success([
                 'phone' => $validated['phone'],
                 'name' => $validated['name'] ?? '园区访客',
@@ -87,8 +98,8 @@ class UserController extends Controller
 
         $openid = $session['openid'];
 
-        $user = User::query()->where('openid', $openid)->first()
-            ?: User::query()->where('phone', $phone)->first();
+        $user = User::withTrashed()->where('openid', $openid)->first()
+            ?: User::withTrashed()->where('phone', $phone)->first();
 
         // 园区人员也可微信授权拿个人会话（才能看到工作台入口）；工作台仍须单独账号密码登录
         if (! $user) {
@@ -100,6 +111,9 @@ class UserController extends Controller
                 'phone_verified_at' => now(),
             ]);
         } else {
+            if ($user->trashed()) {
+                $user->restore();
+            }
             $user->update([
                 'phone' => $phone,
                 'openid' => $openid,

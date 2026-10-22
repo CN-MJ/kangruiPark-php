@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class EnterpriseCategory extends Model
 {
+    use SoftDeleteFlag;
+
     public const STATUS_ACTIVE = 1;
 
     public const STATUS_INACTIVE = 0;

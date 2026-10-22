@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class Policy extends Model
 {
+    use SoftDeleteFlag;
+
     protected $fillable = [
         'title',
         'level',

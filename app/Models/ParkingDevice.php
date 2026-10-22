@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class ParkingDevice extends Model
 {
+    use SoftDeleteFlag;
+
     public const TYPE_ENTRY_CAMERA = 1;
 
     public const TYPE_EXIT_CAMERA = 2;

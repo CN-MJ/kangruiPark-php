@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class Activity extends Model
 {
+    use SoftDeleteFlag;
+
     public const STATUS_OPEN = 0;
     public const STATUS_FINISHED = 1;
     public const STATUS_CANCELLED = 2;

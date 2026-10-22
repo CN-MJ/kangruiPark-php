@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class ParkingRecord extends Model
 {
+    use SoftDeleteFlag;
+
     /** 状态：未离场 */
     public const STATUS_IN_PARK = 0;
 

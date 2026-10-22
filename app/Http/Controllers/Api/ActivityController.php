@@ -52,17 +52,33 @@ class ActivityController extends Controller
             'contact_phone' => 'required|string|max:20',
         ]);
 
-        try {
-            ActivityRegistration::create([
-                'activity_id' => $activity->id,
+        $existing = ActivityRegistration::withTrashed()
+            ->where('activity_id', $activity->id)
+            ->where('contact_phone', $validated['contact_phone'])
+            ->first();
+
+        if ($existing && ! $existing->trashed()) {
+            return $this->error('您已报名该活动', 400);
+        }
+
+        if ($existing) {
+            $existing->restore();
+            $existing->update([
                 'contact_name' => $validated['contact_name'],
-                'contact_phone' => $validated['contact_phone'],
             ]);
-        } catch (QueryException $e) {
-            if (str_contains($e->getMessage(), 'activity_registrations_activity_id_contact_phone_unique')) {
-                return $this->error('您已报名该活动', 400);
+        } else {
+            try {
+                ActivityRegistration::create([
+                    'activity_id' => $activity->id,
+                    'contact_name' => $validated['contact_name'],
+                    'contact_phone' => $validated['contact_phone'],
+                ]);
+            } catch (QueryException $e) {
+                if (str_contains($e->getMessage(), 'activity_registrations_activity_id_contact_phone_unique')) {
+                    return $this->error('您已报名该活动', 400);
+                }
+                throw $e;
             }
-            throw $e;
         }
 
         $activity->increment('registered_count');

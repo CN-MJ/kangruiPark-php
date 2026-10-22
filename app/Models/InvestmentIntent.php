@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class InvestmentIntent extends Model
 {
+    use SoftDeleteFlag;
+
     public const STATUS_PENDING = 0;
     public const STATUS_CONTACTED = 1;
     public const STATUS_HIGH_INTENT = 2;

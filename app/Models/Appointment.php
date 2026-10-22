@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class Appointment extends Model
 {
+    use SoftDeleteFlag;
+
     /** 状态：待确认 */
     public const STATUS_PENDING = 0;
 

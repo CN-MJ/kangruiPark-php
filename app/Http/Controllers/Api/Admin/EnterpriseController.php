@@ -137,10 +137,10 @@ class EnterpriseController extends Controller
         if (! $enterprise) {
             return $this->error('企业不存在', 404);
         }
-        $enterprise->categories()->detach();
+        // 假删除：保留分类关联，恢复后仍可直接使用
         $enterprise->delete();
 
-        return $this->success(null, '删除成功');
+        return $this->success(null, '已删除（可恢复）');
     }
 
     private function validateData(Request $request): array
@@ -228,6 +228,11 @@ class EnterpriseController extends Controller
     {
         $before = $this->enterpriseImagePaths($previous);
         $after = $this->enterpriseImagePaths($current);
+        $rawCurrent = array_values(array_filter($current, static fn ($img) => is_string($img) && trim($img) !== ''));
+        // 客户端若传来无法解析的路径，禁止误删磁盘上的原图
+        if ($rawCurrent !== [] && $after === []) {
+            return;
+        }
         $removed = array_values(array_diff($before, $after));
 
         foreach ($removed as $relative) {

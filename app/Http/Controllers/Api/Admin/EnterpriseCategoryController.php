@@ -115,8 +115,8 @@ class EnterpriseCategoryController extends Controller
         }
 
         $asPrimary = Enterprise::query()->where('primary_category_id', $id)->exists();
-        $asTag = \Illuminate\Support\Facades\DB::table('enterprise_category')
-            ->where('enterprise_category_id', $id)
+        $asTag = Enterprise::query()
+            ->whereHas('categories', fn ($q) => $q->where('enterprise_categories.id', $id))
             ->exists();
 
         if ($asPrimary || $asTag) {
@@ -125,7 +125,7 @@ class EnterpriseCategoryController extends Controller
 
         $category->delete();
 
-        return $this->success(null, '删除成功');
+        return $this->success(null, '已删除（可恢复）');
     }
 
     private function validateData(Request $request, ?EnterpriseCategory $current = null): array

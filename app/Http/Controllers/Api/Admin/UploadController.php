@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Services\ImageCompressService;
 use App\Support\MediaUrl;
+use App\Support\PublicStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -59,6 +60,8 @@ class UploadController extends Controller
 
         $relative = $this->toPublicRelative($result['path']) ?: $stored;
         $relative = MediaUrl::toRelative($relative) ?: $relative;
+        // public/storage 若是普通目录（非软链），把文件同步到网站可读路径
+        PublicStorage::ensureWebVisible($relative);
         $url = MediaUrl::absolute($relative, $request);
 
         return $this->success([

@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\SoftDeleteFlag;
 
 class News extends Model
 {
+    use SoftDeleteFlag;
+
     public const TYPE_NEWS = 'news';
 
     public const TYPE_NOTICE = 'notice';
