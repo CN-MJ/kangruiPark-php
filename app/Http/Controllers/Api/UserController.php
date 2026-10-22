@@ -218,7 +218,7 @@ class UserController extends Controller
     }
 
     /**
-     * 已登录用户修改名称和头像。头像须是本接口上传后的 uploads/avatars 路径。
+     * 已登录用户修改名称、头像；手机号已授权且非工作人员时可自选访客/商户身份。
      */
     public function updateProfile(Request $request): JsonResponse
     {
@@ -228,9 +228,11 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:50',
             'avatar' => 'nullable|string|max:500',
+            'role' => 'nullable|string|in:visitor,merchant',
         ], [
             'name.required' => '请填写名称',
             'name.max' => '名称不能超过 50 个字',
+            'role.in' => '身份只能选择访客或商户',
         ]);
 
         $name = trim($validated['name']);
@@ -253,6 +255,26 @@ class UserController extends Controller
                     return $this->error('头像文件不存在，请重新上传', 422);
                 }
                 $payload['avatar'] = $relative;
+            }
+        }
+
+        if (array_key_exists('role', $validated) && $validated['role'] !== null) {
+            $role = (string) $validated['role'];
+            if ($user->phone_verified_at === null) {
+                return $this->error('请先微信授权手机号后再选择身份', 403);
+            }
+            if ($user->role === User::ROLE_PARK) {
+                return $this->error('工作人员身份由管理员分配，无法自行修改', 403);
+            }
+            if (! in_array($role, [User::ROLE_VISITOR, User::ROLE_MERCHANT], true)) {
+                return $this->error('身份只能选择访客或商户', 422);
+            }
+            $payload['role'] = $role;
+            if ($role === User::ROLE_MERCHANT) {
+                $payload['merchant_apply_status'] = User::APPLY_APPROVED;
+                if (! $user->merchant_applied_at) {
+                    $payload['merchant_applied_at'] = now();
+                }
             }
         }
 
@@ -395,6 +417,8 @@ class UserController extends Controller
             'role_text' => $this->roleText($user->role),
             'checked_in_at' => $user->checked_in_at,
             'phone_verified' => $user->phone_verified_at !== null,
+            'can_edit_identity' => $user->phone_verified_at !== null
+                && in_array($user->role, [User::ROLE_VISITOR, User::ROLE_MERCHANT], true),
             'merchant_apply_status' => $user->merchant_apply_status ?: User::APPLY_NONE,
             'merchant_applied_at' => $user->merchant_applied_at,
             'staff_apply_status' => $user->staff_apply_status ?: User::APPLY_NONE,
