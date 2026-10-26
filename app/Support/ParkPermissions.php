@@ -62,6 +62,7 @@ class ParkPermissions
                 'dashboard',
                 'houses',
                 'investments',
+                'upload',
             ],
         ];
     }
@@ -157,7 +158,7 @@ class ParkPermissions
         $key = self::normalizeRole($role);
         $perms = self::roleMap()[$key] ?? ['dashboard'];
 
-        return array_values($perms);
+        return self::withImpliedPermissions(array_values($perms));
     }
 
     public static function allows(User $user, string $permission): bool
@@ -210,8 +211,39 @@ class ParkPermissions
         }
 
         $perms = array_merge(['dashboard'], $menus);
-        if (in_array('enterprises', $menus, true) || in_array('categories', $menus, true)) {
-            $perms[] = 'upload';
+
+        return self::withImpliedPermissions($perms);
+    }
+
+    /**
+     * 菜单隐含权限：需要传图的模块自动带上 upload；企业相关带上分类只读。
+     *
+     * @param  list<string>  $perms
+     * @return list<string>
+     */
+    public static function withImpliedPermissions(array $perms): array
+    {
+        if (in_array('*', $perms, true)) {
+            return ['*'];
+        }
+
+        $needsUpload = [
+            'enterprises',
+            'categories',
+            'service_teams',
+            'news',
+            'houses',
+            'policies',
+            'activities',
+        ];
+        foreach ($needsUpload as $menu) {
+            if (in_array($menu, $perms, true)) {
+                $perms[] = 'upload';
+                break;
+            }
+        }
+
+        if (in_array('enterprises', $perms, true) || in_array('categories', $perms, true)) {
             $perms[] = 'categories_read';
         }
 
