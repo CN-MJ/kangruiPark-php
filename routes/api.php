@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\InvestmentIntentController;
 use App\Http\Controllers\Api\MerchantAppointmentController;
 use App\Http\Controllers\Api\MerchantAuthController;
 use App\Http\Controllers\Api\MerchantController;
+use App\Http\Controllers\Api\MerchantServiceController;
+use App\Http\Controllers\Api\EnterpriseServiceController;
+use App\Http\Controllers\Api\UserShopController;
 use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\ParkingConfirmController;
 use App\Http\Controllers\Api\ParkingController;
@@ -19,6 +22,7 @@ use App\Http\Controllers\Api\ServiceTeamController;
 use App\Http\Controllers\Api\SuperConsoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserVehicleController;
+use App\Http\Controllers\Api\WeChatBindController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -37,6 +41,10 @@ Route::prefix('appointments')->group(function () {
     Route::patch('/{id}/cancel', [AppointmentController::class, 'cancel']);
 });
 
+// 微信服务号：H5 授权绑定 openid + 复查是否已关注
+Route::post('/wechat/bind-openid', [WeChatBindController::class, 'bindOpenid']);
+Route::post('/wechat/check-subscribe', [WeChatBindController::class, 'checkSubscribe']);
+
 // 园区商户（访客预约选公司）
 Route::get('/merchants', [MerchantController::class, 'index']);
 Route::post('/investment/intent', [InvestmentIntentController::class, 'store']);
@@ -50,11 +58,13 @@ Route::get('/activities', [ActivityController::class, 'index']);
 Route::get('/activities/{id}', [ActivityController::class, 'show']);
 Route::post('/activities/{id}/register', [ActivityController::class, 'register']);
 
-// 企业库（公开浏览与筛选）
+// 企业库（公开浏览与筛选）+ 企业服务（商品）
 Route::get('/enterprise-categories', [EnterpriseCategoryController::class, 'index']);
 Route::get('/enterprise-districts', [EnterpriseController::class, 'districts']);
 Route::get('/enterprises', [EnterpriseController::class, 'index']);
 Route::get('/enterprises/{id}', [EnterpriseController::class, 'show']);
+Route::get('/enterprise-services', [EnterpriseServiceController::class, 'index']);
+Route::get('/enterprise-services/{id}', [EnterpriseServiceController::class, 'show']);
 
 // 停车模块
 Route::prefix('parking')->group(function () {
@@ -111,6 +121,19 @@ Route::prefix('user')->middleware('user.auth')->group(function () {
     Route::post('/vehicles', [UserVehicleController::class, 'store']);
     Route::delete('/vehicles/{id}', [UserVehicleController::class, 'destroy']);
     Route::patch('/vehicles/{id}/default', [UserVehicleController::class, 'setDefault']);
+
+    // 微信商户店铺：需已绑定企业
+    Route::get('/shop/me', [UserShopController::class, 'me']);
+    Route::post('/shop/upload', [UserShopController::class, 'uploadImage']);
+    Route::get('/shop/services', [UserShopController::class, 'services']);
+    Route::post('/shop/services', [UserShopController::class, 'storeService']);
+    Route::put('/shop/services/{id}', [UserShopController::class, 'updateService']);
+    Route::patch('/shop/services/{id}/status', [UserShopController::class, 'setServiceStatus']);
+    Route::delete('/shop/services/{id}', [UserShopController::class, 'destroyService']);
+    Route::get('/shop/appointments', [UserShopController::class, 'appointments']);
+    Route::get('/shop/appointments/{id}', [UserShopController::class, 'showAppointment']);
+    Route::patch('/shop/appointments/{id}/confirm', [UserShopController::class, 'confirmAppointment']);
+    Route::patch('/shop/appointments/{id}/reject', [UserShopController::class, 'rejectAppointment']);
 });
 
 Route::prefix('merchant')->middleware('merchant.auth')->group(function () {
@@ -120,6 +143,12 @@ Route::prefix('merchant')->middleware('merchant.auth')->group(function () {
     Route::get('/appointments', [MerchantAppointmentController::class, 'index']);
     Route::patch('/appointments/{id}/confirm', [MerchantAppointmentController::class, 'confirm']);
     Route::patch('/appointments/{id}/reject', [MerchantAppointmentController::class, 'reject']);
+    Route::post('/upload', [MerchantServiceController::class, 'uploadImage']);
+    Route::get('/services', [MerchantServiceController::class, 'index']);
+    Route::post('/services', [MerchantServiceController::class, 'store']);
+    Route::put('/services/{id}', [MerchantServiceController::class, 'update']);
+    Route::patch('/services/{id}/status', [MerchantServiceController::class, 'setStatus']);
+    Route::delete('/services/{id}', [MerchantServiceController::class, 'destroy']);
 });
 
 // 园区工作台（园区 Token 或超管升权 Token）+ 轻量 RBAC
@@ -160,6 +189,13 @@ Route::prefix('park')->middleware(['park.auth', 'park.audit'])->group(function (
         Route::get('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'show']);
         Route::put('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'update']);
         Route::delete('/enterprises/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseController::class, 'destroy']);
+        Route::get('/enterprise-services', [\App\Http\Controllers\Api\Admin\EnterpriseServiceController::class, 'index']);
+        Route::post('/enterprise-services', [\App\Http\Controllers\Api\Admin\EnterpriseServiceController::class, 'store']);
+        Route::put('/enterprise-services/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseServiceController::class, 'update']);
+        Route::delete('/enterprise-services/{id}', [\App\Http\Controllers\Api\Admin\EnterpriseServiceController::class, 'destroy']);
+        Route::get('/merchant-accounts', [\App\Http\Controllers\Api\Admin\MerchantAccountController::class, 'index']);
+        Route::post('/merchant-accounts', [\App\Http\Controllers\Api\Admin\MerchantAccountController::class, 'upsert']);
+        Route::put('/merchant-accounts/{id}', [\App\Http\Controllers\Api\Admin\MerchantAccountController::class, 'update']);
     });
 
     Route::middleware('park.can:appointments')->group(function () {

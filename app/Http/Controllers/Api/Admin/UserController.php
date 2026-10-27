@@ -52,20 +52,14 @@ class UserController extends Controller
         return $this->respond(fn () => $this->staff->deleteRole($request, $key));
     }
 
-    /**
-     * 旧入驻审核已停用
-     */
-    public function approveMerchant(int $id): JsonResponse
+    public function approveMerchant(Request $request, int $id): JsonResponse
     {
-        return $this->error('入驻审核已停用，请使用工作台「用户管理」处理工作人员申请', 410);
+        return $this->respond(fn () => $this->staff->approveMerchant($request, $id));
     }
 
-    /**
-     * 旧入驻审核已停用
-     */
-    public function rejectMerchant(int $id): JsonResponse
+    public function rejectMerchant(Request $request, int $id): JsonResponse
     {
-        return $this->error('入驻审核已停用，请使用工作台「用户管理」处理工作人员申请', 410);
+        return $this->respond(fn () => $this->staff->rejectMerchant($request, $id));
     }
 
     /**

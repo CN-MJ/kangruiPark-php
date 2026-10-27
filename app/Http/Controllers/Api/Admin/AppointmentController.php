@@ -15,7 +15,11 @@ class AppointmentController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Appointment::query()
-            ->with('merchant:id,name,location')
+            ->with([
+                'merchant:id,name,location',
+                'enterprise:id,name',
+                'enterpriseService:id,name',
+            ])
             ->orderByDesc('created_at');
 
         if ($request->filled('status')) {
@@ -24,6 +28,10 @@ class AppointmentController extends Controller
 
         if ($request->filled('user_phone')) {
             $query->where('user_phone', 'like', '%'.$request->input('user_phone').'%');
+        }
+
+        if ($request->filled('enterprise_id')) {
+            $query->where('enterprise_id', (int) $request->input('enterprise_id'));
         }
 
         $list = $query->paginate(20);

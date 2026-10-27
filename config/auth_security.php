@@ -30,10 +30,9 @@ return [
         'ip_allowlist' => env('SUPER_ADMIN_IP_ALLOWLIST', ''),
     ],
 
-    // 商户密码工作台默认关闭；企业信息改由园区「企业库」维护
-    // 临时开启：MERCHANT_WORKBENCH_ENABLED=true
+    // 企业工作台（服务发布 / 预约处理）。企业档案仍由园区「企业库」维护。
     'merchant' => [
-        'workbench_enabled' => (bool) env('MERCHANT_WORKBENCH_ENABLED', false),
+        'workbench_enabled' => (bool) env('MERCHANT_WORKBENCH_ENABLED', true),
     ],
 
 ];

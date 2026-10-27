@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\Concerns\SoftDeleteFlag;
 
 class Enterprise extends Model
@@ -78,6 +80,21 @@ class Enterprise extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function services(): HasMany
+    {
+        return $this->hasMany(EnterpriseService::class)->orderByDesc('sort_order')->orderByDesc('id');
+    }
+
+    public function onShelfServices(): HasMany
+    {
+        return $this->services()->where('status', EnterpriseService::STATUS_ON);
+    }
+
+    public function merchantAccount(): HasOne
+    {
+        return $this->hasOne(Merchant::class, 'enterprise_id');
+    }
+
     public function isOnShelf(): bool
     {
         return (int) $this->status === self::STATUS_ON;
@@ -86,9 +103,9 @@ class Enterprise extends Model
     public static function audienceText(string $value): string
     {
         return match ($value) {
-            self::AUDIENCE_C => '面向百姓C端',
-            self::AUDIENCE_B => '面向企业B端',
-            default => 'BC兼顾',
+            self::AUDIENCE_C => '服务个人',
+            self::AUDIENCE_B => '服务企业',
+            default => '个人与企业均可',
         };
     }
 

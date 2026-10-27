@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
+use App\Models\Enterprise;
 use App\Models\User;
 use App\Services\AuthTokenService;
 use App\Services\CaptchaService;
 use App\Services\ImageCompressService;
 use App\Services\LoginRateLimiter;
+use App\Services\MerchantEnterpriseBinder;
 use App\Services\WeChat\MiniProgramService;
 use App\Support\ParkPermissions;
 use Illuminate\Http\JsonResponse;
@@ -28,6 +30,7 @@ class UserController extends Controller
         private readonly LoginRateLimiter $rateLimiter,
         private readonly MiniProgramService $miniProgram,
         private readonly ImageCompressService $imageCompress,
+        private readonly MerchantEnterpriseBinder $merchantBinder,
     ) {}
 
     /**
@@ -229,10 +232,14 @@ class UserController extends Controller
             'name' => 'required|string|max:50',
             'avatar' => 'nullable|string|max:500',
             'role' => 'nullable|string|in:visitor,merchant',
+            'enterprise_id' => 'nullable|integer|exists:enterprises,id',
+            'merchant_apply_note' => 'nullable|string|max:500',
         ], [
             'name.required' => '请填写名称',
             'name.max' => '名称不能超过 50 个字',
             'role.in' => '身份只能选择访客或商户',
+            'enterprise_id.exists' => '所选企业不存在',
+            'merchant_apply_note.max' => '备注不能超过 500 字',
         ]);
 
         $name = trim($validated['name']);
@@ -258,26 +265,6 @@ class UserController extends Controller
             }
         }
 
-        if (array_key_exists('role', $validated) && $validated['role'] !== null) {
-            $role = (string) $validated['role'];
-            if ($user->phone_verified_at === null) {
-                return $this->error('请先微信授权手机号后再选择身份', 403);
-            }
-            if ($user->role === User::ROLE_PARK) {
-                return $this->error('工作人员身份由管理员分配，无法自行修改', 403);
-            }
-            if (! in_array($role, [User::ROLE_VISITOR, User::ROLE_MERCHANT], true)) {
-                return $this->error('身份只能选择访客或商户', 422);
-            }
-            $payload['role'] = $role;
-            if ($role === User::ROLE_MERCHANT) {
-                $payload['merchant_apply_status'] = User::APPLY_APPROVED;
-                if (! $user->merchant_applied_at) {
-                    $payload['merchant_applied_at'] = now();
-                }
-            }
-        }
-
         $previous = $user->avatar;
         $user->update($payload);
 
@@ -289,7 +276,70 @@ class UserController extends Controller
             $this->deleteAvatarFile($previous);
         }
 
-        return $this->success($this->formatUser($user->fresh()), '已保存');
+        $user = $user->fresh();
+
+        // 身份：访客可直接改回；商户须提交申请，由园区审核后生效
+        if (array_key_exists('role', $validated) && $validated['role'] !== null) {
+            if ($user->phone_verified_at === null) {
+                return $this->error('请先微信授权手机号后再选择身份', 403);
+            }
+            if ($user->role === User::ROLE_PARK) {
+                return $this->error('工作人员身份由管理员分配，无法自行修改', 403);
+            }
+
+            $role = (string) $validated['role'];
+            if ($role === User::ROLE_VISITOR) {
+                if ($user->isMerchant() || $user->merchant_apply_status === User::APPLY_PENDING) {
+                    $this->merchantBinder->unbind($user);
+                }
+            } elseif ($role === User::ROLE_MERCHANT) {
+                if ($user->isMerchant() && $user->enterprise_id) {
+                    // 已是认证商户：企业变更需重新申请，不在此直接改绑
+                    return $this->success(
+                        $this->formatUser($user->fresh()->load([
+                            'enterprise:id,name,status,settle_in_park',
+                            'merchantApplyEnterprise:id,name',
+                        ])),
+                        '您已是认证商户。如需更换企业请联系园区管理员'
+                    );
+                }
+
+                if ($user->merchant_apply_status === User::APPLY_PENDING) {
+                    return $this->error('您已有待审核的商户申请，请等待园区处理', 400);
+                }
+
+                $enterpriseId = (int) ($validated['enterprise_id'] ?? 0);
+                if ($enterpriseId <= 0) {
+                    return $this->error('申请商户请选择所属企业', 422);
+                }
+                $note = trim((string) ($validated['merchant_apply_note'] ?? ''));
+                if ($note === '') {
+                    return $this->error('请填写申请备注，便于园区审核', 422);
+                }
+
+                $enterprise = Enterprise::query()
+                    ->where('status', Enterprise::STATUS_ON)
+                    ->find($enterpriseId);
+                if (! $enterprise) {
+                    return $this->error('企业不存在或已下架', 404);
+                }
+
+                $this->merchantBinder->apply($user, $enterprise, $note);
+
+                return $this->success(
+                    $this->formatUser($user->fresh()->load([
+                        'enterprise:id,name,status,settle_in_park',
+                        'merchantApplyEnterprise:id,name',
+                    ])),
+                    '商户申请已提交，请等待园区审核'
+                );
+            }
+        }
+
+        return $this->success($this->formatUser($user->fresh()->load([
+            'enterprise:id,name,status,settle_in_park',
+            'merchantApplyEnterprise:id,name',
+        ])), '已保存');
     }
 
     /**
@@ -408,6 +458,17 @@ class UserController extends Controller
 
     private function formatUser(User $user): array
     {
+        if ($user->enterprise_id && ! $user->relationLoaded('enterprise')) {
+            $user->load('enterprise:id,name,status,settle_in_park');
+        }
+        if ($user->merchant_apply_enterprise_id && ! $user->relationLoaded('merchantApplyEnterprise')) {
+            $user->load('merchantApplyEnterprise:id,name');
+        }
+
+        $merchantApplyStatus = $user->merchant_apply_status ?: User::APPLY_NONE;
+        $canEditIdentity = $user->phone_verified_at !== null
+            && in_array($user->role, [User::ROLE_VISITOR, User::ROLE_MERCHANT], true);
+
         $data = [
             'id' => $user->id,
             'phone' => $user->phone,
@@ -415,12 +476,27 @@ class UserController extends Controller
             'has_avatar' => $this->protectAvatar($user) !== null,
             'role' => $user->role,
             'role_text' => $this->roleText($user->role),
+            'enterprise_id' => $user->enterprise_id,
+            'enterprise' => $user->enterprise ? [
+                'id' => $user->enterprise->id,
+                'name' => $user->enterprise->name,
+                'status' => $user->enterprise->status,
+                'settle_in_park' => (bool) $user->enterprise->settle_in_park,
+            ] : null,
             'checked_in_at' => $user->checked_in_at,
             'phone_verified' => $user->phone_verified_at !== null,
-            'can_edit_identity' => $user->phone_verified_at !== null
-                && in_array($user->role, [User::ROLE_VISITOR, User::ROLE_MERCHANT], true),
-            'merchant_apply_status' => $user->merchant_apply_status ?: User::APPLY_NONE,
+            'has_mp_openid' => is_string($user->mp_openid) && $user->mp_openid !== '',
+            'can_edit_identity' => $canEditIdentity,
+            'merchant_apply_status' => $merchantApplyStatus,
+            'merchant_apply_status_text' => $this->staffStatusText($merchantApplyStatus),
             'merchant_applied_at' => $user->merchant_applied_at,
+            'merchant_apply_enterprise_id' => $user->merchant_apply_enterprise_id,
+            'merchant_apply_enterprise' => $user->merchantApplyEnterprise ? [
+                'id' => $user->merchantApplyEnterprise->id,
+                'name' => $user->merchantApplyEnterprise->name,
+            ] : null,
+            'merchant_apply_note' => $user->merchant_apply_note,
+            'merchant_reject_reason' => $user->merchant_reject_reason,
             'staff_apply_status' => $user->staff_apply_status ?: User::APPLY_NONE,
             'staff_apply_status_text' => $this->staffStatusText($user->staff_apply_status ?: User::APPLY_NONE),
             'staff_apply_note' => $user->staff_apply_note,

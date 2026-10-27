@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Enterprise;
 use App\Models\ParkRole;
 use App\Models\User;
 use App\Support\ParkPermissions;
@@ -12,16 +13,22 @@ class StaffDirectory
 {
     public function __construct(
         private readonly AdminAuditLogger $auditLogger,
+        private readonly MerchantEnterpriseBinder $merchantBinder,
     ) {}
 
     public function listUsers(Request $request): array
     {
         $this->ensureReady();
         $query = User::query()
+            ->with([
+                'enterprise:id,name',
+                'merchantApplyEnterprise:id,name',
+            ])
             ->where(function ($inner) {
                 $inner->where('can_escalate', false)->orWhereNull('can_escalate');
             })
-            ->orderByRaw("CASE staff_apply_status WHEN 'pending' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN merchant_apply_status = 'pending' OR staff_apply_status = 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('merchant_applied_at')
             ->orderByDesc('staff_applied_at')
             ->orderByDesc('id');
 
@@ -34,8 +41,9 @@ class StaffDirectory
         if ($request->filled('staff_apply_status')) {
             $query->where('staff_apply_status', $request->input('staff_apply_status'));
         }
-        if ($request->filled('apply_status')) {
-            $query->where('merchant_apply_status', $request->input('apply_status'));
+        if ($request->filled('apply_status') || $request->filled('merchant_apply_status')) {
+            $status = $request->input('apply_status', $request->input('merchant_apply_status'));
+            $query->where('merchant_apply_status', $status);
         }
         if ($request->filled('keyword')) {
             $keyword = trim((string) $request->input('keyword'));
@@ -47,6 +55,9 @@ class StaffDirectory
 
         $list = $query->paginate(20);
         $viaSuper = (bool) $request->attributes->get('via_super');
+        $basePending = User::query()->where(function ($inner) {
+            $inner->where('can_escalate', false)->orWhereNull('can_escalate');
+        });
 
         return [
             'list' => collect($list->items())->map(fn (User $user) => $this->presentUser($user, $viaSuper))->values(),
@@ -56,15 +67,85 @@ class StaffDirectory
                 'total' => $list->total(),
                 'last_page' => $list->lastPage(),
             ],
-            'pending_count' => User::query()
-                ->where('staff_apply_status', User::APPLY_PENDING)
-                ->where(function ($inner) {
-                    $inner->where('can_escalate', false)->orWhereNull('can_escalate');
-                })
-                ->count(),
+            'pending_count' => (clone $basePending)->where('staff_apply_status', User::APPLY_PENDING)->count(),
+            'merchant_pending_count' => (clone $basePending)->where('merchant_apply_status', User::APPLY_PENDING)->count(),
             'park_roles' => $this->roleOptions(),
             'menus' => $this->menuOptions(),
             'can_configure' => true,
+        ];
+    }
+
+    /**
+     * @return array{user: array<string, mixed>, message: string}
+     */
+    public function approveMerchant(Request $request, int $id): array
+    {
+        $target = $this->findUser($id);
+        if ($target->merchant_apply_status !== User::APPLY_PENDING) {
+            throw new StaffRuleException('该用户没有待审核的商户申请', 400);
+        }
+
+        $validated = $request->validate([
+            'enterprise_id' => 'nullable|integer|exists:enterprises,id',
+        ]);
+
+        $enterpriseId = (int) ($validated['enterprise_id'] ?? $target->merchant_apply_enterprise_id ?? 0);
+        if ($enterpriseId <= 0) {
+            throw new StaffRuleException('请指定要绑定的企业');
+        }
+
+        $enterprise = Enterprise::query()->find($enterpriseId);
+        if (! $enterprise) {
+            throw new StaffRuleException('企业不存在', 404);
+        }
+
+        $before = $this->snapshot($target);
+        $this->merchantBinder->approve($target, $enterprise);
+        $target = $target->fresh()->load(['enterprise:id,name', 'merchantApplyEnterprise:id,name']);
+
+        $this->audit($request, $this->actor($request), 'merchant.apply.approve', $target, [
+            'title' => '通过商户申请 '.$target->name,
+            'before' => $before,
+            'after' => $this->snapshot($target),
+            'enterprise_id' => $enterprise->id,
+        ], 'user', (string) $target->id);
+
+        return [
+            'user' => $this->presentUser($target, (bool) $request->attributes->get('via_super')),
+            'message' => '已通过，用户已成为该企业商户',
+        ];
+    }
+
+    /**
+     * @return array{user: array<string, mixed>, message: string}
+     */
+    public function rejectMerchant(Request $request, int $id): array
+    {
+        $target = $this->findUser($id);
+        if ($target->merchant_apply_status !== User::APPLY_PENDING) {
+            throw new StaffRuleException('该用户没有待审核的商户申请', 400);
+        }
+
+        $validated = $request->validate([
+            'reject_reason' => 'required|string|max:255',
+        ], [
+            'reject_reason.required' => '请填写拒绝原因',
+        ]);
+
+        $before = $this->snapshot($target);
+        $this->merchantBinder->reject($target, trim($validated['reject_reason']));
+        $target = $target->fresh()->load(['enterprise:id,name', 'merchantApplyEnterprise:id,name']);
+
+        $this->audit($request, $this->actor($request), 'merchant.apply.reject', $target, [
+            'title' => '拒绝商户申请 '.$target->name,
+            'before' => $before,
+            'after' => $this->snapshot($target),
+            'reason' => $validated['reject_reason'],
+        ], 'user', (string) $target->id);
+
+        return [
+            'user' => $this->presentUser($target, (bool) $request->attributes->get('via_super')),
+            'message' => '已拒绝该商户申请',
         ];
     }
 
@@ -82,6 +163,7 @@ class StaffDirectory
             'name' => 'nullable|string|max:50',
             'role' => 'nullable|string|in:visitor,merchant,park',
             'park_role' => 'nullable|string|max:32',
+            'enterprise_id' => 'nullable|integer|exists:enterprises,id',
             'password' => 'nullable|string|min:'.$minLen,
         ], [
             'password.min' => "密码至少 {$minLen} 位",
@@ -107,16 +189,37 @@ class StaffDirectory
         if (array_key_exists('name', $validated) && $validated['name'] !== null && $validated['name'] !== '') {
             $target->name = $validated['name'];
         }
-        $target->role = $role;
-        $target->park_role = $parkRole;
+
+        // 管理员直接设为商户时必须指定企业
+        if ($role === User::ROLE_MERCHANT) {
+            $enterpriseId = (int) ($validated['enterprise_id'] ?? $target->enterprise_id ?? $target->merchant_apply_enterprise_id ?? 0);
+            if ($enterpriseId <= 0) {
+                throw new StaffRuleException('设为商户时请指定所属企业');
+            }
+            $enterprise = Enterprise::query()->find($enterpriseId);
+            if (! $enterprise) {
+                throw new StaffRuleException('企业不存在', 404);
+            }
+            $this->merchantBinder->approve($target, $enterprise);
+            $target = $target->fresh();
+            $parkRole = null;
+        } elseif ($role === User::ROLE_VISITOR && $before['role'] === User::ROLE_MERCHANT) {
+            $this->merchantBinder->unbind($target);
+            $target = $target->fresh();
+        } else {
+            $target->role = $role;
+            $target->park_role = $parkRole;
+        }
 
         if ($role === User::ROLE_PARK) {
+            $target->role = User::ROLE_PARK;
+            $target->park_role = $parkRole;
             if ($target->staff_apply_status === User::APPLY_PENDING || $before['role'] !== User::ROLE_PARK) {
                 $target->staff_apply_status = User::APPLY_APPROVED;
                 $target->staff_reviewed_at = now();
                 $target->staff_reject_reason = null;
             }
-        } elseif ($before['role'] === User::ROLE_PARK) {
+        } elseif ($before['role'] === User::ROLE_PARK && $role !== User::ROLE_PARK) {
             $target->staff_apply_status = User::APPLY_NONE;
             $target->staff_reject_reason = null;
         }
@@ -383,6 +486,15 @@ class StaffDirectory
         $labels = ParkPermissions::roleLabels();
         $status = $user->staff_apply_status ?: User::APPLY_NONE;
 
+        if ($user->enterprise_id && ! $user->relationLoaded('enterprise')) {
+            $user->load('enterprise:id,name');
+        }
+        if ($user->merchant_apply_enterprise_id && ! $user->relationLoaded('merchantApplyEnterprise')) {
+            $user->load('merchantApplyEnterprise:id,name');
+        }
+
+        $merchantApply = $user->merchant_apply_status ?: User::APPLY_NONE;
+
         $data = [
             'id' => $user->id,
             'phone' => $user->phone,
@@ -394,8 +506,21 @@ class StaffDirectory
             'phone_verified' => $user->phone_verified_at !== null,
             'has_password' => (bool) $user->password,
             'checked_in_at' => $user->checked_in_at,
-            'merchant_apply_status' => $user->merchant_apply_status ?: User::APPLY_NONE,
+            'enterprise_id' => $user->enterprise_id,
+            'enterprise' => $user->enterprise ? [
+                'id' => $user->enterprise->id,
+                'name' => $user->enterprise->name,
+            ] : null,
+            'merchant_apply_status' => $merchantApply,
+            'merchant_apply_status_text' => $this->staffStatusText($merchantApply),
             'merchant_applied_at' => $user->merchant_applied_at,
+            'merchant_apply_enterprise_id' => $user->merchant_apply_enterprise_id,
+            'merchant_apply_enterprise' => $user->merchantApplyEnterprise ? [
+                'id' => $user->merchantApplyEnterprise->id,
+                'name' => $user->merchantApplyEnterprise->name,
+            ] : null,
+            'merchant_apply_note' => $user->merchant_apply_note,
+            'merchant_reject_reason' => $user->merchant_reject_reason,
             'staff_apply_status' => $status,
             'staff_apply_status_text' => $this->staffStatusText($status),
             'staff_apply_note' => $user->staff_apply_note,
@@ -446,6 +571,8 @@ class StaffDirectory
             'name' => $user->name,
             'role' => $user->role,
             'park_role' => $user->park_role,
+            'enterprise_id' => $user->enterprise_id,
+            'merchant_apply_status' => $user->merchant_apply_status,
             'can_escalate' => (bool) $user->can_escalate,
         ];
     }

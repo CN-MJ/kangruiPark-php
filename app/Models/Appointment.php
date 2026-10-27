@@ -28,6 +28,8 @@ class Appointment extends Model
         'appointment_time',
         'resource_name',
         'merchant_id',
+        'enterprise_id',
+        'enterprise_service_id',
         'status',
     ];
 
@@ -37,12 +39,24 @@ class Appointment extends Model
             'appointment_time' => 'datetime',
             'status' => 'integer',
             'merchant_id' => 'integer',
+            'enterprise_id' => 'integer',
+            'enterprise_service_id' => 'integer',
         ];
     }
 
     public function merchant(): BelongsTo
     {
         return $this->belongsTo(Merchant::class);
+    }
+
+    public function enterprise(): BelongsTo
+    {
+        return $this->belongsTo(Enterprise::class);
+    }
+
+    public function enterpriseService(): BelongsTo
+    {
+        return $this->belongsTo(EnterpriseService::class, 'enterprise_service_id');
     }
 
     public function statusText(): string

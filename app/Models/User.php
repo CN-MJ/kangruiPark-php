@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Concerns\SoftDeleteFlag;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -23,6 +24,7 @@ class User extends Authenticatable
         'name',
         'avatar',
         'role',
+        'enterprise_id',
         'park_role',
         'staff_apply_status',
         'staff_applied_at',
@@ -31,11 +33,15 @@ class User extends Authenticatable
         'staff_reject_reason',
         'password',
         'openid',
+        'mp_openid',
         'phone_verified_at',
         'can_escalate',
         'checked_in_at',
         'merchant_apply_status',
         'merchant_applied_at',
+        'merchant_apply_enterprise_id',
+        'merchant_apply_note',
+        'merchant_reject_reason',
     ];
 
     public const APPLY_NONE = 'none';
@@ -59,9 +65,21 @@ class User extends Authenticatable
             'merchant_applied_at' => 'datetime',
             'staff_applied_at' => 'datetime',
             'staff_reviewed_at' => 'datetime',
+            'enterprise_id' => 'integer',
+            'merchant_apply_enterprise_id' => 'integer',
             'can_escalate' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    public function enterprise(): BelongsTo
+    {
+        return $this->belongsTo(Enterprise::class);
+    }
+
+    public function merchantApplyEnterprise(): BelongsTo
+    {
+        return $this->belongsTo(Enterprise::class, 'merchant_apply_enterprise_id');
     }
 
     public function tokens(): HasMany

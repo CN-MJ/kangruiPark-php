@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ApiResponse;
 use App\Models\Enterprise;
+use App\Models\EnterpriseService;
+use App\Support\EnterpriseServicePayload;
 use App\Support\GanzhouDistrict;
 use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +26,7 @@ class EnterpriseController extends Controller
     public function index(Request $request): JsonResponse
     {
         $perPage = min(max((int) $request->input('per_page', 10), 1), 50);
+        $withServices = filter_var($request->input('with_services', true), FILTER_VALIDATE_BOOLEAN);
 
         $query = Enterprise::query()
             ->with([
@@ -32,6 +35,11 @@ class EnterpriseController extends Controller
             ])
             ->where('status', Enterprise::STATUS_ON)
             ->orderByDesc('id');
+
+        if ($withServices) {
+            // 列表页由前端截断展示；勿对 hasMany 使用 limit（Laravel 无法按父记录正确截断）
+            $query->with('onShelfServices');
+        }
 
         if ($request->filled('major_id')) {
             $query->where('primary_category_id', (int) $request->input('major_id'));
@@ -63,19 +71,25 @@ class EnterpriseController extends Controller
 
         if ($request->filled('keyword')) {
             $keyword = trim((string) $request->input('keyword'));
-            $query->where(function ($q) use ($keyword) {
-                $q->where('name', 'like', "%{$keyword}%")
-                    ->orWhere('business_intro', 'like', "%{$keyword}%")
-                    ->orWhere('address', 'like', "%{$keyword}%")
-                    ->orWhere('district', 'like', "%{$keyword}%")
-                    ->orWhere('contact_name', 'like', "%{$keyword}%");
-            });
+            if ($keyword !== '') {
+                $query->where(function ($q) use ($keyword) {
+                    $q->where('name', 'like', "%{$keyword}%")
+                        ->orWhere('business_intro', 'like', "%{$keyword}%")
+                        ->orWhere('address', 'like', "%{$keyword}%")
+                        ->orWhere('district', 'like', "%{$keyword}%")
+                        ->orWhere('contact_name', 'like', "%{$keyword}%")
+                        ->orWhereHas('onShelfServices', function ($sq) use ($keyword) {
+                            $sq->where('name', 'like', "%{$keyword}%")
+                                ->orWhere('summary', 'like', "%{$keyword}%");
+                        });
+                });
+            }
         }
 
         $page = $query->paginate($perPage);
 
         return $this->success([
-            'list' => collect($page->items())->map(fn (Enterprise $e) => $this->formatPublic($e))->values(),
+            'list' => collect($page->items())->map(fn (Enterprise $e) => $this->formatPublic($e, false, $withServices))->values(),
             'pagination' => [
                 'current_page' => $page->currentPage(),
                 'per_page' => $page->perPage(),
@@ -91,6 +105,7 @@ class EnterpriseController extends Controller
             ->with([
                 'primaryCategory:id,name,parent_id',
                 'categories:id,name,parent_id',
+                'onShelfServices',
             ])
             ->where('status', Enterprise::STATUS_ON)
             ->find($id);
@@ -99,10 +114,10 @@ class EnterpriseController extends Controller
             return $this->error('企业不存在或已下架', 404);
         }
 
-        return $this->success($this->formatPublic($enterprise, true));
+        return $this->success($this->formatPublic($enterprise, true, true));
     }
 
-    private function formatPublic(Enterprise $e, bool $detail = false): array
+    private function formatPublic(Enterprise $e, bool $detail = false, bool $withServices = false): array
     {
         $images = MediaUrl::absoluteList(
             is_array($e->images) ? array_values($e->images) : [],
@@ -134,6 +149,25 @@ class EnterpriseController extends Controller
                 'name' => $c->name,
             ])->values(),
         ];
+
+        if ($withServices && $e->relationLoaded('onShelfServices')) {
+            $data['services'] = $e->onShelfServices->map(function (EnterpriseService $s) {
+                $images = MediaUrl::absoluteList(
+                    is_array($s->images) ? array_values($s->images) : [],
+                    request(),
+                );
+
+                return [
+                    'id' => $s->id,
+                    'name' => $s->name,
+                    'summary' => $s->summary,
+                    'price_text' => $s->price_text ?: EnterpriseServicePayload::DEFAULT_PRICE,
+                    'cover' => $images[0] ?? null,
+                    'images' => $images,
+                ];
+            })->values();
+            $data['services_count'] = $e->onShelfServices->count();
+        }
 
         if ($detail) {
             $data['contact_name'] = $e->contact_name;

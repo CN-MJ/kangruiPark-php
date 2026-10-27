@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Concerns\SoftDeleteFlag;
 
@@ -15,9 +16,11 @@ class Merchant extends Model
     public const STATUS_INACTIVE = 0;
 
     protected $fillable = [
+        'enterprise_id',
         'name',
         'contact_name',
         'contact_phone',
+        'mp_openid',
         'password',
         'location',
         'status',
@@ -31,10 +34,16 @@ class Merchant extends Model
     protected function casts(): array
     {
         return [
+            'enterprise_id' => 'integer',
             'status' => 'integer',
             'sort_order' => 'integer',
             'password' => 'hashed',
         ];
+    }
+
+    public function enterprise(): BelongsTo
+    {
+        return $this->belongsTo(Enterprise::class);
     }
 
     public function appointments(): HasMany

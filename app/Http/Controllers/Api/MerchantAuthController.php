@@ -25,7 +25,7 @@ class MerchantAuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         if (! config('auth_security.merchant.workbench_enabled', false)) {
-            return $this->error('商户工作台已停用。企业信息请使用园区工作台「企业库」维护，或联系园区管理员。', 410);
+            return $this->error('企业工作台已停用。请联系园区管理员开启 MERCHANT_WORKBENCH_ENABLED，或使用园区工作台代管服务。', 410);
         }
 
         $minLen = (int) config('auth_security.password.min_length', 6);
@@ -84,7 +84,26 @@ class MerchantAuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        return $this->success($request->attributes->get('merchant_user'));
+        /** @var Merchant $merchant */
+        $merchant = $request->attributes->get('merchant_user');
+        $merchant->load('enterprise:id,name,status,settle_in_park');
+
+        return $this->success([
+            'id' => $merchant->id,
+            'name' => $merchant->name,
+            'contact_name' => $merchant->contact_name,
+            'contact_phone' => $merchant->contact_phone,
+            'location' => $merchant->location,
+            'status' => $merchant->status,
+            'enterprise_id' => $merchant->enterprise_id,
+            'enterprise' => $merchant->enterprise ? [
+                'id' => $merchant->enterprise->id,
+                'name' => $merchant->enterprise->name,
+                'status' => $merchant->enterprise->status,
+                'settle_in_park' => (bool) $merchant->enterprise->settle_in_park,
+            ] : null,
+            'has_mp_openid' => is_string($merchant->mp_openid) && $merchant->mp_openid !== '',
+        ]);
     }
 
     public function logout(Request $request): JsonResponse
